@@ -34,8 +34,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from . import (authz, config, device, manage, pages, roundtrip, runner,
-               surface, wire)
+from . import (__version__, authz, config, device, manage, pages, roundtrip,
+               runner, surface, wire)
 from .envelope import (
     REMEDIES,
     RMAPI_NOT_FOUND_REMEDY,
@@ -74,6 +74,20 @@ _HOST = os.environ.get("RM_MCP_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("PORT", os.environ.get("RM_MCP_PORT", "8000")))
 
 _server = FastMCP("rm", host=_HOST, port=_PORT)
+
+# Report OUR version in the initialize handshake, not the SDK's.
+#
+# FastMCP takes no `version` argument (checked against mcp 1.30.0), and when
+# the inner server's version is None the SDK substitutes its own -- so a client
+# connecting to this server was told "rm v1.30.0", which is the mcp package's
+# version, tells a user nothing about rm-mcp, and silently changes whenever the
+# SDK is upgraded. The handshake is how a client identifies what it is talking
+# to, so it should say 1.0.0.
+#
+# `_mcp_server` is private, and this is the only route in this SDK version;
+# create_initialization_options() reads the attribute set here. If FastMCP ever
+# accepts a version directly, pass it there and delete this.
+_server._mcp_server.version = __version__
 
 # Registration passes through the surface gate, so RM_MCP_SURFACE decides which
 # of the registered tools exist on this deployment. Unset = full = the desk, unchanged.

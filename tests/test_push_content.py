@@ -24,6 +24,20 @@ if str(TOOLS_DIR) not in sys.path:
 
 from rm_mcp import roundtrip  # noqa: E402
 
+# A clean public install has NO PDF engine: pymupdf is AGPL and deliberately
+# absent from this package's dependencies. A test that renders a PDF for real
+# must SKIP there rather than fail, or the published repo ships a suite that
+# goes red on first run and looks broken when it is doing exactly what it says.
+#
+# Same decorator and same reason as tests/test_creation.py, which got this
+# right when the creation lane was written. This older file was never brought
+# up to it, and nothing caught that because every run happened on a desk where
+# pymupdf is installed. Found 2026-09-22 by installing the PUBLISHED repo into
+# a clean venv per its own README, where this was the only failure.
+needs_pdf_engine = unittest.skipUnless(
+    roundtrip._pdf_engine_available(),
+    "no PDF engine (pip install pymupdf) -- expected on a clean install")
+
 
 class _PushSpy:
     """Stand-in for push_local_file: records the file it was handed and
@@ -69,6 +83,7 @@ class TestRenderThenPush(unittest.TestCase):
     def tearDown(self) -> None:
         roundtrip.push_local_file = self._orig
 
+    @needs_pdf_engine
     def test_markdown_renders_pdf_then_pushes(self):
         r = roundtrip.render_and_push_content(
             "markdown", "# Title\n\nBody paragraph.", "104_Stacks", "Brief")

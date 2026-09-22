@@ -47,7 +47,42 @@ def _tool_count(server) -> int:
     return len(asyncio.run(server.mcp.list_tools()))
 
 
+USAGE = """\
+rm-mcp -- a reMarkable 2 as a working surface for an AI agent.
+
+usage:
+  run_server.py                 run the MCP server on stdio (how a client
+                                launches it; not useful by hand)
+  run_server.py --check         import smoke test, print the tool count, exit
+  run_server.py --init [opts]   walk this clone to a working install
+  run_server.py --init --help   the full list of --init options
+  run_server.py --help          this message
+
+Diagnostics go to stderr: under stdio transport stdout is the protocol channel.
+"""
+
+
+def _usage(stream, code: int) -> None:
+    print(USAGE, file=stream, end="")
+    sys.exit(code)
+
+
 def main() -> None:
+    argv = sys.argv[1:]
+
+    # Anything not recognised used to fall THROUGH to server.main(), which
+    # starts the stdio server -- so `--help` sat waiting on a stdin nobody was
+    # writing to, and at EOF exited 0 having printed nothing. A newcomer typing
+    # the most obvious command got silence and a success code, indistinguishable
+    # from a broken install; a typo like `--chek` did the same. Found 2026-09-22
+    # installing the published repo into a clean venv per its own README.
+    # No args is still the server: that is how an MCP client launches it.
+    if argv[:1] in (["--help"], ["-h"]):
+        _usage(sys.stderr, 0)
+    if argv and argv[0] not in ("--init", "--check"):
+        print(f"rm-mcp: unknown option {argv[0]!r}\n", file=sys.stderr)
+        _usage(sys.stderr, 2)
+
     if sys.argv[1:2] == ["--init"]:
         # The setup walk: writes .env and ROUTING.md, prints the registration.
         # Runs before the server import so a half-installed clone still gets
