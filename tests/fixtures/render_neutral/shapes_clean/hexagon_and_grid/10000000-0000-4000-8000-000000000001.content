@@ -1,0 +1,54 @@
+{
+  "coverPageNumber": 0,
+  "documentMetadata": {},
+  "extraMetadata": {},
+  "fileType": "notebook",
+  "fontName": "",
+  "formatVersion": 2,
+  "lineHeight": -1,
+  "margins": 180,
+  "orientation": "portrait",
+  "pageCount": 2,
+  "cPages": {
+    "lastOpened": {
+      "timestamp": "0",
+      "value": "10000000-0000-4000-8000-0000000000a1"
+    },
+    "pages": [
+      {
+        "id": "10000000-0000-4000-8000-0000000000a1",
+        "idx": {
+          "timestamp": "0",
+          "value": {
+            "rindex": -1
+          }
+        }
+      },
+      {
+        "id": "10000000-0000-4000-8000-0000000000a2",
+        "idx": {
+          "timestamp": "0",
+          "value": {
+            "rindex": -1
+          }
+        }
+      }
+    ],
+    "uuids": [
+      {
+        "timestamp": "0",
+        "value": "10000000-0000-4000-8000-0000000000a1"
+      },
+      {
+        "timestamp": "0",
+        "value": "10000000-0000-4000-8000-0000000000a2"
+      }
+    ]
+  },
+  "pageTags": [],
+  "sizeInBytes": "0",
+  "tags": [],
+  "textAlignment": "justify",
+  "textScale": 1,
+  "zoomMode": "bestFit"
+}

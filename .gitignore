@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+tools/.env
+tools/rm_templates.local.json
+tools/.rm_state.json
+tools/.rm_state.lock
+ROUTING.md
+CREATION.md
+.pytest_cache/
+*.egg-info/
+build/
+dist/

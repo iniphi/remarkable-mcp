@@ -1,0 +1,40 @@
+[project]
+name = "rm-mcp"
+version = "1.0.0"
+description = "An MCP server that makes a reMarkable 2 a working surface for an AI agent: push documents, annotate them in ink, pull the annotations back as structured data."
+requires-python = ">=3.10"
+
+# These are the REAL runtime dependencies of the default (core) surface, and
+# `pip install -e .` must produce a working install. This block was
+# "documentation only" until 2026-09-06 -- it declared mcp alone, on the
+# assumption that the server always ran under one preconfigured interpreter
+# that happened to carry everything else. That assumption does not survive
+# leaving the machine it was written on.
+#
+# NOTE: pymupdf is deliberately absent and must stay absent. It is AGPL-3.0
+# and is imported only by scripts outside the shipped manifest, which is what
+# lets this package be MIT. Adding it here would relicense the project.
+dependencies = [
+    "mcp[cli]>=1.6.0,<2",   # the server framework. <2: mcp 2.x removed mcp.server.fastmcp
+                            # (FastMCP -> MCPServer), which server.py imports; found by a
+                            # clean-clone install on 2026-09-09 that resolved to 2.2.0 and
+                            # failed at the very first --check.
+    "rmscene>=0.7.0",       # .rm v6 scene parsing -- strokes, highlights (MIT)
+    "pypdfium2>=4.30.0",    # PDF rasterisation (BSD-3/Apache-2.0)
+    "pillow>=10.0.0",       # page image composition (MIT-CMU)
+    "markdown>=3.5",        # rm_render_content's markdown -> HTML step (BSD)
+]
+
+[project.optional-dependencies]
+# `pip install -e ".[test]"` -- pytest was undeclared until 2026-09-09, so a
+# literal README follower hit "No module named pytest".
+test = ["pytest>=8", "numpy>=1.26"]   # numpy: pixel diffs in test_render_goldens_neutral (BSD)
+# Only needed for RM_MCP_SURFACE=remote, which serves streamable-HTTP.
+# The stdio lane -- what most people want -- does not import these.
+remote = [
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+rm-mcp = "rm_mcp.server:main"
