@@ -1,6 +1,6 @@
 """run_server.py --init: the non-interactive walk an agent runs.
 
-Added 2026-09-10 (S100). The device never enters these tests: the rmapi
+Added 2026-09-10. The device never enters these tests: the rmapi
 probe is replaced by a fake, so what is checked is what --init WRITES -- the
 merged .env, the routing note, the registration with absolute paths -- and
 that re-running does not clobber a hand-edited file.

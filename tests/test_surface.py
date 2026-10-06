@@ -26,7 +26,7 @@ if str(RM_MCP_DIR) not in sys.path:
     sys.path.insert(0, str(RM_MCP_DIR))
 
 # Layout-agnostic: config knows where the substrate lives, and this suite must
-# pass both embedded in 104_stacks and in the standalone public tree.
+# pass both embedded in the private monorepo and in the standalone public tree.
 from rm_mcp import config as _config  # noqa: E402
 
 TOOLS_DIR = _config.TOOLS_DIR
@@ -73,7 +73,7 @@ class TestDefaultFollowsTheBuild(unittest.TestCase):
 
     def setUp(self) -> None:
         # "Is rm_pull.py present?" is the question; WHERE it sits is not.
-        # The S112 split moved it to tools/rm/, so a flat stat started
+        # The 2026-09-20 split moved it to tools/rm/, so a flat stat started
         # answering "no" on the desk and this class began asserting the public
         # tree's counts against the private build. Ask both layouts.
         self.full_build = ((TOOLS_DIR / "rm_pull.py").is_file()
@@ -93,7 +93,7 @@ class TestDefaultFollowsTheBuild(unittest.TestCase):
     def test_full_surface_is_every_tool_the_build_ships(self):
         """`full` means "no filter", so its SIZE is a property of the build.
 
-        This asserted a literal 24 until 2026-09-06, when the Stacks lane
+        This asserted a literal 24 until 2026-09-06, when the private lane
         (stacks_lane.py -- rm_capture_todos, and rm_triage_inbox before its
         2026-09-16 withdrawal) stopped shipping
         publicly. A correct public build then failed a test whose own class
@@ -151,7 +151,7 @@ class TestCoreIsSafeToPublish(unittest.TestCase):
     # tools/rm_eval_pdfium.py, so the scripts they shell out to are clean.
     # rm_flatten stays permanently -- the pypdfium2 eval is explicit that there
     # is no permissive drop-in for the fitz.Story rich-text path.
-    # rm_get_highlights LEFT this set on 2026-09-10 (S100): the text-layer
+    # rm_get_highlights LEFT this set on 2026-09-10: the text-layer
     # intersection was ported from PyMuPDF to pypdfium2, so it ships in core.
     AGPL_TOOLS = {"rm_flatten"}
 
@@ -175,7 +175,7 @@ class TestCoreIsSafeToPublish(unittest.TestCase):
     def test_render_tools_are_published_now_the_port_landed(self):
         """The other half of the 2026-08-27 port, asserted so it cannot silently
         regress: rm_render and rm_page_image are the tools it unblocked, and
-        rm_page_image is what completes SHIP-FLAVOUR-2.md's documented six-tool
+        rm_page_image is what completes the documented six-tool
         remote surface."""
         self.assertLessEqual({"rm_render", "rm_page_image"}, set(registered("core")))
         self.assertIn("rm_page_image", set(registered("remote")))

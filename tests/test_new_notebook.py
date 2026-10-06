@@ -1,6 +1,6 @@
 """rm_new_notebook: a template-built Type Folio notebook, pushed like any push.
 
-Added 2026-09-10 (S100) with the templates in tools/rm_make_text_notebook.py.
+Added 2026-09-10 with the templates in tools/rm_make_text_notebook.py.
 Everything is offline: the build runs the real script as a child process, the
 push is replaced by a fake that records what it was handed. The template
 values themselves are what three real notebooks carried; whether the device
@@ -28,7 +28,7 @@ from rm_mcp import config, roundtrip  # noqa: E402
 TOOLS_DIR = config.TOOLS_DIR
 
 from _toolpath import tool_script  # noqa: E402
-# The builder CLI, wherever the layout puts it (S112 split).
+# The builder CLI, wherever the layout puts it (2026-09-20 split).
 BUILDER_CLI = tool_script(TOOLS_DIR, "rm_make_text_notebook.py")
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))

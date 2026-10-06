@@ -66,7 +66,7 @@ def run_script(script: str, args: list[str], tool: str,
     CompletedProcess (rather than raising) keeps every existing call site --
     which already branches on returncode and surfaces stderr -- unchanged.
     """
-    # Bucket-aware since the tools/ split (S112): callers still name a bare
+    # Bucket-aware since the tools/ split (2026-09-20): callers still name a bare
     # filename ("rm_render_page.py") and config resolves it in whichever layout
     # this tree is -- flat in the public build, split here.
     script_path = config.resolve_script(script)

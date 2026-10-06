@@ -498,7 +498,7 @@ def reading_page_payload(
     The rm_* tools have no Notion access by design (see /rm-pull SKILL.md), so
     the drain emits this into its --json-summary and the skill performs the
     dual-write: append `section_markdown` to the book's reading page, then upsert
-    the `workspace.page_registry` row per ForClaude/HUB_WRITEBACK.md.
+    the `workspace.page_registry` row per the hub write-back rule.
 
     `pipeline` ('single-call' default, or 'two-stage') is carried into the
     summary purely as provenance -- see record_pages().

@@ -3,8 +3,8 @@
 The public repo ships under a permissive licence. PyMuPDF (fitz) is AGPL-3.0,
 and nothing permissive replaces it for the one job that needs a PDF engine --
 pypdfium2 can rasterise but cannot DRAW into a PDF
-(tests/fixtures/render/PYPDFIUM2_EVAL.md -- this docstring cited
-ForClaude/PYPDFIUM2_EVAL.md until 2026-08-27; that path has never existed).
+(tests/fixtures/render/PYPDFIUM2_EVAL.md -- an earlier version of this
+docstring cited a path outside the tree that never existed; corrected 2026-08-27).
 So the rule, settled 2026-08-21, is:
 
     No file in the shipped manifest may import fitz. The single place fitz is
@@ -33,7 +33,7 @@ if str(RM_MCP_DIR) not in sys.path:
     sys.path.insert(0, str(RM_MCP_DIR))
 
 # Ask config where the substrate lives rather than assuming a layout: this
-# suite has to pass BOTH embedded in 104_stacks and in the standalone public
+# suite has to pass BOTH embedded in the private monorepo and in the standalone public
 # tree, where tools/ sits beside the package instead of a level up.
 from rm_mcp import config  # noqa: E402
 
@@ -45,7 +45,7 @@ def _tool(name: str) -> Path:
     """A shipped script by bare filename, in either layout.
 
     tools/ was split into rm/, zotero/, litgather/ and common/ on 2026-09-20
-    (S112) while the PUBLIC tree stayed flat, so this suite runs against both
+    while the PUBLIC tree stayed flat, so this suite runs against both
     shapes and must not assume either. config.resolve_script is the same
     resolver rm_mcp.runner uses, so the test looks where the server looks.
     """
@@ -65,7 +65,7 @@ SHIPPED_TOOLS = {
     "rm_render_content.py",
     "rm_render_page.py",
 }
-# rm_state_remote.py was in this set from 56f84bb until 2026-09-20 (S112) and
+# rm_state_remote.py was in this set from 56f84bb until 2026-09-20 and
 # was never in rm_build_public.MANIFEST -- one half of a lockstep both files
 # claim to keep and nothing enforced. It kept THIS suite green while the
 # public tree it describes could not import at all, because rm_config's

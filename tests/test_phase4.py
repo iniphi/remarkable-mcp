@@ -50,10 +50,10 @@ PROOT = PROOT_DIR.rstrip("/")
 class TestCanonicalChild(unittest.TestCase):
     def test_exact_match_wins(self):
         with mock.patch.object(device, "ls", return_value=[
-                {"name": "200_Poetics", "type": "folder"},
-                {"name": "200_poetics", "type": "folder"}]):
-            name, warnings = device.canonical_child("/Projects", "200_Poetics")
-        self.assertEqual((name, warnings), ("200_Poetics", []))
+                {"name": "110_Notes", "type": "folder"},
+                {"name": "110_notes", "type": "folder"}]):
+            name, warnings = device.canonical_child("/Projects", "110_Notes")
+        self.assertEqual((name, warnings), ("110_Notes", []))
 
     def test_unique_ci_match_uses_device_casing(self):
         with mock.patch.object(device, "ls", return_value=[
@@ -78,19 +78,19 @@ class TestCanonicalChild(unittest.TestCase):
         # A hand-made NOTEBOOK (doc) collides with the folder we want to ensure:
         # keep the requested folder name but flag the collision + remedy.
         with mock.patch.object(device, "ls", return_value=[
-                {"name": "200_poetics", "type": "doc"}]):
+                {"name": "110_notes", "type": "doc"}]):
             name, warnings = device.canonical_child(
-                "/Projects", "200_Poetics", want_type="folder")
-        self.assertEqual(name, "200_Poetics")
+                "/Projects", "110_Notes", want_type="folder")
+        self.assertEqual(name, "110_Notes")
         self.assertEqual(warnings[0]["code"], "project_notebook_collision")
         self.assertEqual(warnings[0]["data"]["collides_type"], "doc")
 
     def test_want_type_same_type_ci_match_still_reuses_casing(self):
         with mock.patch.object(device, "ls", return_value=[
-                {"name": "200_poetics", "type": "folder"}]):
+                {"name": "110_notes", "type": "folder"}]):
             name, warnings = device.canonical_child(
-                "/Projects", "200_Poetics", want_type="folder")
-        self.assertEqual(name, "200_poetics")
+                "/Projects", "110_Notes", want_type="folder")
+        self.assertEqual(name, "110_notes")
         self.assertEqual(warnings[0]["code"], "project_case_matched")
 
 

@@ -1,6 +1,6 @@
 """rm_pull_project is the loop: get, typed text, highlights, render, hand-off.
 
-Added 2026-09-10 (S100) after a newcomer test of the public tree found that the
+Added 2026-09-10 after a newcomer test of the public tree found that the
 pull returned ok while three of its four steps had silently failed against
 scripts the build does not ship. The loop now reports one status line per
 step, skips what a build cannot do (rather than failing it), skips what a

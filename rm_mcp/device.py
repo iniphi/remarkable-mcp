@@ -63,7 +63,7 @@ def canonical_child(parent: str, name: str,
 
     Lists `parent` and returns (canonical_name, warnings). An exact match
     wins; a unique case-insensitive match returns the DEVICE's casing plus a
-    project_case_matched warning (prevents 200_poetics / 200_Poetics
+    project_case_matched warning (prevents 110_notes / 110_Notes
     duplicate folders). No match, or an unlistable parent, returns the name
     unchanged -- creating a genuinely new folder stays legal. Auth errors
     propagate; other transport failures fall through.

@@ -8,7 +8,7 @@ a public endpoint whose only gate is a shared secret:
      registration are unaffected;
   2. the shared-secret comparison is constant-time.
 
-Run: python -m pytest 104_stacks/rm-mcp/tests/test_hardening.py
+Run: python -m pytest rm-mcp/tests/test_hardening.py
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class TestDestructiveGuardWiring(unittest.TestCase):
     REMOTE = {"RM_MCP_TRANSPORT": "streamable-http"}
 
     def test_delete_execute_refused_and_device_untouched(self):
-        doc = "/00_Projects/104_Stacks/victim"
+        doc = "/00_Projects/100_thesis/victim"
         with mock.patch.dict(os.environ, self.REMOTE), \
                 mock.patch.object(manage.device, "ls") as ls, \
                 mock.patch.object(manage.device, "rm") as rm:
@@ -89,15 +89,15 @@ class TestDestructiveGuardWiring(unittest.TestCase):
     def test_move_execute_refused_and_device_untouched(self):
         with mock.patch.dict(os.environ, self.REMOTE), \
                 mock.patch.object(manage.device, "mv") as mv:
-            result = manage.move_impl("/00_Projects/104_Stacks/a",
-                                      "/00_Projects/104_Stacks/b",
+            result = manage.move_impl("/00_Projects/100_thesis/a",
+                                      "/00_Projects/100_thesis/b",
                                       dry_run=False, allow_anywhere=False)
         self.assertFalse(result["ok"])
         mv.assert_not_called()
 
     def test_dry_run_still_returns_the_plan_when_disabled(self):
         """Planning is read-only, so it stays available on the remote."""
-        doc = "/00_Projects/104_Stacks/victim"
+        doc = "/00_Projects/100_thesis/victim"
         with mock.patch.dict(os.environ, self.REMOTE), \
                 mock.patch.object(manage.device, "ls") as ls:
             ls.return_value = [{"name": "victim", "type": "doc"}]
@@ -109,7 +109,7 @@ class TestDestructiveGuardWiring(unittest.TestCase):
 
     def test_stdio_execute_still_reaches_the_device(self):
         """The guard must not break the local lane."""
-        doc = "/00_Projects/104_Stacks/victim"
+        doc = "/00_Projects/100_thesis/victim"
         env = {k: v for k, v in os.environ.items()
                if k not in _POLICY_VARS}
         with mock.patch.dict(os.environ, env, clear=True), \
@@ -168,7 +168,7 @@ class TestAdminTokenIsTheOptIn(unittest.TestCase):
     def test_guard_still_refuses_the_device_without_an_admin_token(self):
         """The second layer holds even if the HTTP gate were bypassed."""
         with self._env(RM_MCP_WRITE_TOKEN="w"),                 mock.patch.object(manage.device, "rm") as rm:
-            result = manage.delete_impl("/00_Projects/104_Stacks/victim",
+            result = manage.delete_impl("/00_Projects/100_thesis/victim",
                                         dry_run=False, allow_anywhere=False)
         self.assertFalse(result["ok"])
         rm.assert_not_called()

@@ -16,7 +16,7 @@ Covers the four properties the network lane now claims:
 The middlewares are exercised as ASGI apps directly: build a scope, drive
 them with a fake receive/send, assert the status. No server, no uvicorn.
 
-Run: python -m pytest 104_stacks/rm-mcp/tests/test_wire.py
+Run: python -m pytest rm-mcp/tests/test_wire.py
 """
 
 from __future__ import annotations

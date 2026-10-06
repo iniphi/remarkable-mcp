@@ -108,7 +108,7 @@ def materialised_local(content_b64: str, filename: str,
     from a remote caller at all. rm_push_pdf / rm_push_file / rm_push_image /
     rm_push_dir all take a `path`, which resolves on the SERVICE's filesystem --
     so a sandbox has no way to supply one, and four registered tools were dead
-    on the wire by construction (ForClaude/REMARKABLE.md said as much and left
+    on the wire by construction (the project notes said as much and left
     it there). rm_push_content already proved the fix for generated markup:
     send the content inline. This does the same for bytes.
 

@@ -9,7 +9,7 @@ were answering two different questions and neither was written down as code:
     core    (21)  the public repo's device-infrastructure surface: push, pull,
                   diff, move, delete, create, inspect. No Zotero, no Notion, no
                   vision spend, and nothing that reaches an AGPL script.
-    remote   (7)  the hosted Flavour-2 wire surface (SHIP-FLAVOUR-2.md): what a
+    remote   (7)  the hosted wire surface (the documented remote flavour): what a
                   remote caller over streamable-http gets. Chosen on blast
                   radius, and on the fact that tools returning container-local
                   paths are a functional dead end for a remote caller.
@@ -59,10 +59,10 @@ rendering under a backend the caller did not ask for.
 
 The eval verdict ruling GO on the swap (min SSIM 0.943, native fixtures
 byte-identical) is at rm-mcp/tests/fixtures/render/PYPDFIUM2_EVAL.md. This
-docstring previously cited ForClaude/PYPDFIUM2_EVAL.md, which does not exist.
+docstring previously cited a file that does not exist.
 
 `remote` is therefore the full seven tools of its documented surface (six
-when SHIP-FLAVOUR-2.md was written, plus rm_create from 2026-09-20), and
+when the remote surface was first documented, plus rm_create from 2026-09-20), and
 BLOCKED_ON_RENDER_PORT is empty. It is kept as an empty frozenset rather than
 deleted so that test_surface.py's guard against silently re-adding a blocked
 tool still has something to assert against.
@@ -99,7 +99,7 @@ CORE_TOOLS = frozenset({
     "rm_page_image",
 })
 
-# SHIP-FLAVOUR-2.md's documented remote surface -- complete as of 2026-08-27,
+# The documented remote surface -- complete as of 2026-08-27,
 # when the render port landed and rm_page_image became publishable. Keep this a
 # strict subset of CORE_TOOLS.
 REMOTE_TOOLS = frozenset({
@@ -141,7 +141,7 @@ def default_surface() -> str:
     An explicit RM_MCP_SURFACE always wins over this.
     """
     # resolve_script, not a flat stat: the marker is PRESENT on the desk but
-    # sits in tools/rm/ since the S112 split, so a flat check answered "absent"
+    # sits in tools/rm/ since the 2026-09-20 split, so a flat check answered "absent"
     # and the desk server quietly dropped from 24 tools to 17 -- a real
     # capability loss reported as a normal startup.
     from .config import resolve_script

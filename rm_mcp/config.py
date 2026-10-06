@@ -1,6 +1,6 @@
 """Configuration for rm-mcp.
 
-Bridges to the Stacks-owned substrate config (tools/rm_config.py) via a
+Bridges to the substrate config (tools/rm_config.py) via a
 sys.path insert, and adds the rm-mcp-only pieces: the /Projects/<code> device
 lane, project resolution, session output directories, and filename sanitising.
 
@@ -8,7 +8,7 @@ The server process sets MSYS_NO_PATHCONV / PYTHONUTF8 / PYTHONIOENCODING in
 its own os.environ at import time so every child process -- including the
 rmapi subprocesses spawned *inside* the wrapped CLIs -- inherits them. This
 compensates for the substrate scripts that do not set MSYS_NO_PATHCONV
-themselves (rm_pull.py, rm_diff.py) without editing any Stacks-owned file.
+themselves (rm_pull.py, rm_diff.py) without editing any substrate file.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def _find_tools_dir() -> Path:
     embedded layout, drifted two days out of date and silently lost a security
     fix; one config that detects its own layout is what stops that recurring.
 
-        embedded (104_stacks):   <stacks>/rm-mcp/rm_mcp/  + <stacks>/tools/
+        embedded (monorepo):      <stacks>/rm-mcp/rm_mcp/  + <stacks>/tools/
         standalone (public):     <repo>/rm_mcp/           + <repo>/tools/
 
     RM_MCP_TOOLS_DIR overrides both for an unusual deployment.
@@ -48,7 +48,7 @@ def _find_tools_dir() -> Path:
     return STACKS_DIR / "tools"
 
 
-# The subpackages tools/ was split into on 2026-09-20 (S112). The PUBLIC tree
+# The subpackages tools/ was split into on 2026-09-20. The PUBLIC tree
 # is still flat -- the build copies the manifest with its basename -- so both
 # layouts are live at once and this file has to read either. Named here rather
 # than imported from tools/_split_plan.py, which does not ship; the standing
@@ -95,7 +95,7 @@ for _root in _import_roots(TOOLS_DIR):
     if str(_root) not in sys.path:
         sys.path.insert(0, str(_root))
 
-import rm_config  # noqa: E402  (Stacks-owned; loads .env at import)
+import rm_config  # noqa: E402  (the substrate config; loads .env at import)
 
 RMAPI_BIN = rm_config.RMAPI_BIN
 # What the operator ASKED for vs what was actually found on disk. rm_health
@@ -123,7 +123,7 @@ def _norm_root(raw: str) -> str:
 
 
 # Where projects live on the tablet. DEFAULT IS THE DEVICE ROOT ("My files"),
-# ruled 2026-09-10 (S100): a project is any top-level folder the user names,
+# ruled 2026-09-10: a project is any top-level folder the user names,
 # because the root is the one place every reMarkable owner already has. The
 # earlier default, /00_Projects, was the author's own convention (renamed
 # on-device 2026-07-03 so the 00_ prefix sorts it to the top) and the desk
@@ -324,7 +324,7 @@ safe_filename_stem = rm_config.safe_filename_stem
 # -- session output directories ----------------------------------------------
 
 # All tool outputs land under a per-server-process session dir, never inside
-# the Stacks tree (rm_capture/rm_triage/rm_notebook_pull default their
+# the repository tree (rm_capture/rm_triage/rm_notebook_pull default their
 # workspaces INSIDE the repo -- we always override with explicit paths).
 _LOCALAPPDATA = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
 SESSION_DIR = (Path(_LOCALAPPDATA) / "rm-mcp" / "sessions"
@@ -509,7 +509,7 @@ PDF_RM_SCALE_FROZEN = rm_config.PDF_RM_SCALE
 # frozen against some assumed page size, could not find that size anywhere
 # on the tool surface, and picked A5 (420 x 595 pt) -- close enough to look
 # deliberate, and wrong, so the document letterboxes rather than sitting 1:1
-# (crosstalk 7981b341, 305_krisis). The answer already existed one file away
+# (reported 2026-09-20). The answer already existed one file away
 # in rm_config, set on 2026-08-18 for precisely this reason. A tool that
 # accepts a PDF has to state the page it expects.
 RM_AUTHORING_PAGE = {

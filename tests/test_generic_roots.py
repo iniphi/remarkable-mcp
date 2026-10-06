@@ -1,8 +1,8 @@
 """The device layout is configurable, not hardcoded to one person's tablet.
 
-rm-mcp grew inside 104_stacks, so its device lane was written as the literal
-/00_Projects + /00_Projects/104_Stacks pair, and a project folder had to match
-the iniphi NNN_name convention. None of that is usable by anyone else, and the
+rm-mcp grew inside a private monorepo, so its device lane was written as a
+literal /00_Projects + /00_Projects/<project> pair, and a project folder had to
+match the author's NNN_name convention. None of that is usable by anyone else, and the
 public ship needs it to be. Settled 2026-08-21: config.py reads the layout from
 the environment, and config is the single source of truth that manage.py and
 server.py both alias.
@@ -28,7 +28,7 @@ if str(RM_MCP_DIR) not in sys.path:
     sys.path.insert(0, str(RM_MCP_DIR))
 
 # Layout-agnostic: config knows where the substrate lives, and this suite must
-# pass both embedded in 104_stacks and in the standalone public tree.
+# pass both embedded in the private monorepo and in the standalone public tree.
 from rm_mcp import config as _config  # noqa: E402
 
 TOOLS_DIR = _config.TOOLS_DIR
@@ -82,7 +82,7 @@ class TestDefaultsUnchanged(unittest.TestCase):
 
     def test_default_projects_root(self):
         """The desk pins /00_Projects in tools/.env; the public default is the
-        device root since 2026-09-10 (S100) -- a project is any top-level folder."""
+        device root since 2026-09-10 -- a project is any top-level folder."""
         desk = tool_script(TOOLS_DIR, "rm_pull.py").is_file()
         self.assertEqual(probe({}, "config.PROJECTS_DEVICE_ROOT"),
                          "/00_Projects" if desk else "/")
@@ -90,13 +90,15 @@ class TestDefaultsUnchanged(unittest.TestCase):
     def test_default_managed_roots(self):
         """MANAGED_ROOTS follows RM_ROOT, and RM_ROOT differs by build.
 
-        The desk sets RM_ROOT=/00_Projects/104_Stacks in tools/.env; the public
+        The desk pins RM_ROOT in its own gitignored config; the public
         tree has no such file and takes the generic default that rm_config and
         the shipped .env.example agree on. Asserting the desk's value in both
         trees made a correct public build look broken (2026-09-06).
         """
         desk = tool_script(TOOLS_DIR, "rm_pull.py").is_file()
-        expected = (["/00_Projects", "/00_Projects/104_Stacks"] if desk
+        # The desk's RM_ROOT is read back from the child's own config, so the
+        # test carries no copy of the desk's private value.
+        expected = (["/00_Projects", probe({}, "config.RM_ROOT")] if desk
                     else ["/"])   # both roots at "/" collapse to the whole device
         self.assertEqual(probe({}, "list(config.MANAGED_ROOTS)"), expected)
 
@@ -105,8 +107,8 @@ class TestDefaultsUnchanged(unittest.TestCase):
                          probe({}, "list(config.MANAGED_ROOTS)"))
 
     def test_default_pattern_accepts_nnn_name(self):
-        self.assertEqual(probe({}, "config.resolve_project('104_Stacks')"),
-                         "104_Stacks")
+        self.assertEqual(probe({}, "config.resolve_project('100_thesis')"),
+                         "100_thesis")
 
     def test_default_pattern_on_the_desk_still_requires_nnn(self):
         """tools/.env pins the NNN shape on the desk; the public default accepts
@@ -154,8 +156,8 @@ class TestProjectsRootOverride(unittest.TestCase):
 
     def test_project_device_dir_follows_the_override(self):
         self.assertEqual(probe({"RM_MCP_PROJECTS_ROOT": "/Work"},
-                               "config.project_device_dir('104_Stacks')"),
-                         "/Work/104_Stacks")
+                               "config.project_device_dir('100_thesis')"),
+                         "/Work/100_thesis")
 
     def test_managed_roots_follow_the_override(self):
         self.assertIn("/Work", probe({"RM_MCP_PROJECTS_ROOT": "/Work"},
@@ -211,7 +213,7 @@ class TestGuardHonoursConfiguredRoots(unittest.TestCase):
 
     def test_guard_blocks_the_old_default_once_repointed(self):
         out = probe({"RM_MCP_MANAGED_ROOTS": "/Alpha"},
-                    "manage._guard_path('/00_Projects/104_Stacks', False)")
+                    "manage._guard_path('/00_Projects/100_thesis', False)")
         self.assertIsNotNone(out)
         self.assertFalse(out["ok"])
         self.assertIn("outside the managed roots", out["error"]["message"])
@@ -222,7 +224,7 @@ class TestGuardHonoursConfiguredRoots(unittest.TestCase):
         self.assertIn("/Alpha", out["error"]["message"])
         self.assertIn("/Beta", out["error"]["message"])
         self.assertIn("/Alpha", out["error"]["remedy"])
-        self.assertNotIn("104_Stacks", out["error"]["remedy"],
+        self.assertNotIn("100_thesis", out["error"]["remedy"],
                          "remedy must name the configured roots, not the old ones")
 
     def test_allow_anywhere_still_escapes(self):
@@ -258,6 +260,26 @@ class TestProjectPatternOverride(unittest.TestCase):
                                   f"config.resolve_project({bad!r})")
                 self.assertIsNotNone(err, f"{bad!r} must be refused")
                 self.assertIn("single path segment", err)
+
+
+class TestRootJoinAtTheDeviceRoot(unittest.TestCase):
+    """RM_ROOT defaults to "/" in the public build, and under() joined onto it
+    as "//Sketches" (found 2026-10-06 by a doctest that no test ran)."""
+
+    def test_joining_under_the_root_gives_one_slash(self):
+        self.assertEqual(probe({}, "__import__('rm_config').under('/', 'Reading', 'Some Paper')"),
+                         "/Reading/Some Paper")
+        self.assertEqual(probe({}, "__import__('rm_config').under('/')"), "/")
+
+    def test_derived_lanes_under_a_root_rm_root(self):
+        got = probe({"RM_ROOT": "/"}, "[__import__('rm_config').SKETCHES_ROOT, "
+                                      "__import__('rm_config').INBOX_ROOT, "
+                                      "__import__('rm_config').PROJECTS_ROOT]")
+        self.assertEqual(got, ["/Sketches", "/Inbox", "/Projects"])
+
+    def test_a_named_root_is_unchanged(self):
+        self.assertEqual(probe({}, "__import__('rm_config').under('110_notes', 'session-1')"),
+                         "/110_notes/session-1")
 
 
 if __name__ == "__main__":

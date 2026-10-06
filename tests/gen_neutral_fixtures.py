@@ -9,7 +9,7 @@ engineered stroke-merge jumps) and generated lorem-ipsum text on a hand-built
 PDF -- see NEUTRAL_PROVENANCE.md alongside this script for the full statement.
 
 This exists because the private fixture corpus at tests/fixtures/render/ is
-Bradley's own handwriting and cannot ship publicly (tracked in the private backlog). test_calibration_neutral.py and
+the author's own handwriting and cannot ship publicly. test_calibration_neutral.py and
 test_render_goldens_neutral.py are the public-safe regression guard for
 PDF_RM_SCALE (rm_config.py) and the stroke-merge detector calibration
 (MERGE_JUMP_THRESHOLD / MERGE_PRESSURE_MIN) that this fixture set backs.

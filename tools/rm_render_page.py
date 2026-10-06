@@ -15,7 +15,7 @@ Usage:
     python tools/rm_render_page.py <extracted-dir> --pages 1,3,5-7
     python tools/rm_render_page.py <extracted-dir> --no-source        # strokes only, blank bg
 
-See ForClaude/REMARKABLE.md (sketch + handwriting interpretation workflow).
+See the project's reMarkable notes (sketch + handwriting interpretation workflow).
 """
 
 from __future__ import annotations
@@ -163,8 +163,8 @@ def detect_stroke_merge(
 
     Returns {"has_artifact": bool, "severe_count": int, "max_jump": float}.
     "severe" = inter-point distance > jump_threshold at pressure > pressure_min
-    inside a single ink stroke — the rmscene 0.8.0 stroke-merge signature. See
-    ForClaude/KNOWN_ISSUE_rmscene_stroke_merge.md.
+    inside a single ink stroke — the rmscene 0.8.0 stroke-merge signature: the
+    parser joins consecutive pen strokes, so a pen lift reads as a long jump.
 
     jump_threshold / pressure_min default to rm_config.MERGE_JUMP_THRESHOLD /
     MERGE_PRESSURE_MIN (60.0 / 189); callers (the CLI, the calibration sweep)
@@ -846,7 +846,8 @@ def main() -> int:
         print(f"\n{total_checked} page(s) checked: {clean} clean, {affected} affected")
         if affected:
             print(f"Affected pages have the rmscene 0.8.0 stroke-merge artifact.")
-            print(f"See ForClaude/KNOWN_ISSUE_rmscene_stroke_merge.md for context.")
+            print("rmscene 0.8.0 can join consecutive pen strokes into one, which "
+                  "draws a spurious connector line; pressure-scaled widths attenuate it.")
         return 1 if affected else 0
 
     rendered = 0

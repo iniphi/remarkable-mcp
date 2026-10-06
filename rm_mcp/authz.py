@@ -184,7 +184,7 @@ LEGACY_TOKEN_VAR = "RM_MCP_AUTH_TOKEN"
 # which on the streamable-http path is a self-inflicted 401 outage, not a
 # security fix. tools/rm_cloud.py already prefers write > admin > read >
 # legacy and needs no change either way (docstring there, and
-# ForClaude/REMARKABLE.md "Cloud lane").
+# the cloud-lane notes).
 ACCEPT_LEGACY_TOKEN = True
 
 

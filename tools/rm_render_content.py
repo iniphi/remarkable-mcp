@@ -7,7 +7,7 @@ already-solved concern (rm-mcp's rm_push_file/rm_push_pdf/rm_push_dir, or
 tools/rm_push*.py) that takes an existing local file.
 
 Four modes, chosen to be a small, general primitive set rather than an
-ever-growing list of "X-to-PDF" converters -- see ForClaude/DIAGRAM_DOC_GEN_TOOLS.md
+ever-growing list of "X-to-PDF" converters -- see the diagram/doc-generation tool survey
 for the reasoning: SVG is the universal escape hatch. Claude generates SVG
 directly (or via RDKit/D2/Penrose/matplotlib/mermaid-render) and hands the
 finished markup to --mode svg; this tool stays dumb about *how* the SVG was
@@ -47,7 +47,7 @@ native SVG reader cover both cases.
 PyMuPDF isolation -- READ BEFORE EDITING
 ----------------------------------------
 Nothing permissive replaces MuPDF here: pypdfium2 can rasterise but cannot DRAW
-into a PDF at all (ForClaude/PYPDFIUM2_EVAL.md). PyMuPDF is AGPL-3.0, so it is
+into a PDF at all (per the pypdfium2 evaluation). PyMuPDF is AGPL-3.0, so it is
 never imported into this module. Every fitz call happens inside
 _FITZ_RENDER_SNIPPET, executed in a CHILD INTERPRETER -- exactly the isolation
 rm-mcp/rm_mcp/roundtrip.py already uses for image->PDF conversion. The

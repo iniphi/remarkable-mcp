@@ -17,24 +17,24 @@ Single source of truth for two things every reMarkable tool needs:
      is no longer one of these -- see READING_ROOT / RM_READING_ROOT below.
 
 Why this exists: the 2026-06-01 workspace renumber moved the device tree from
-/Stacks to /104_Stacks and silently zeroed every pull until .rm_state.json was
-hand-migrated AND a stale `DEVICE_READING_ROOT = "/Stacks/Reading"` literal was
-found in rm_push.py. Deriving every device path from a single RM_ROOT means the
+/Name to /NNN_Name and silently zeroed every pull until .rm_state.json was
+hand-migrated AND a stale hardcoded reading-root literal was found in
+rm_push.py. Deriving every device path from a single RM_ROOT means the
 next renumber is a one-line change here (or in .env), not a hunt-and-migrate.
 
 A second reorg (device-side, deliberate, confirmed live via /rm-diff on
 2026-07-03) nested every top-level project folder under /00_Projects/ --
-/104_Stacks became /00_Projects/104_Stacks.
+/NNN_Name became /00_Projects/NNN_Name.
 
 A third reorg (found 2026-08-27 by a live rmapi walk, ruled deliberate) lifted
-Reading OUT of the Stacks root to /00_Projects/Reading, making it a shared
+Reading OUT of the project root to /00_Projects/Reading, making it a shared
 top-level lane. This one broke the "one root, one line" assumption above: the
 reading desk no longer derives from RM_ROOT at all. It cost 95 documents'
 worth of silently undrained annotations before anyone looked, because rm_pull
 skips a missing path per-document rather than failing. When a lane moves, the
 tell is a drain that reports plenty of candidates and pulls none of them.
-RM_ROOT was repointed here on 2026-07-03; rm-mcp (Overseer-owned, a separate
-codebase) needs the same fix independently -- flagged via crosstalk.
+RM_ROOT was repointed here on 2026-07-03; rm-mcp (a separate codebase) needs
+the same fix independently.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ except ImportError:  # pragma: no cover -- the public tree has no cloud lane
     # public tree has no such module. Before this guard landed the import was
     # hard, which made rm_config -- the module 5 of the 9 shipped scripts
     # import -- fail on import in the public tree: the package was broken from
-    # the first line. Caught 2026-09-20 (S112) by the first clean rebuild since
+    # the first line. Caught 2026-09-20 by the first clean rebuild since
     # the import arrived in 56f84bb; the currently PUBLISHED tree predates it
     # and is unaffected.
     #
@@ -80,7 +80,7 @@ def _remote_ledger_configured() -> bool:
 
 
 # The tools/ ROOT, in either layout. tools/ was split into rm/, zotero/,
-# litgather/ and common/ on 2026-09-20 (S112) while the public tree stayed
+# litgather/ and common/ on 2026-09-20 while the public tree stayed
 # FLAT, so this module ships at tools/rm_config.py there and lives at
 # tools/rm/rm_config.py here. Both have to resolve to tools/.
 #
@@ -112,7 +112,7 @@ def load_env() -> None:
     """Load .env files into os.environ.
 
     Precedence, highest first: real shell environment > tools/.env >
-    104_stacks/.env > workspace/.env. Keys already present in os.environ when
+    <project>/.env > workspace/.env. Keys already present in os.environ when
     this runs (i.e. set by the real shell) are never overwritten; among the
     .env files, the more specific (closer to the tools dir) wins.
 
@@ -122,7 +122,7 @@ def load_env() -> None:
     preset = set(os.environ)  # real / shell-provided keys: never override these
     candidates = [
         _WORKSPACE_DIR / ".env",   # most general
-        _PROJECT_DIR / ".env",     # 104_stacks/.env
+        _PROJECT_DIR / ".env",     # <project>/.env
         _TOOLS_DIR / ".env",       # most specific
     ]
     for candidate in candidates:
@@ -158,7 +158,7 @@ for _stream in (sys.stdout, sys.stderr):
 # Default is the DEVICE ROOT, matching the RM_ROOT that rm_build_public.py
 # writes into the public .env.example. This file ships in the public manifest,
 # so the default is a stranger's first experience: until 2026-09-06 it was
-# "/00_Projects/104_Stacks" -- Bradley's own folder -- which also disagreed
+# "/00_Projects/<project>" -- the author's own folder -- which also disagreed
 # with the documented default in the same build; until 2026-09-10 it was
 # "/00_Projects/Notes", still his layout with the name filed off. The root is
 # the one folder every owner has ("My files"). Set RM_ROOT (tools/.env wins)
@@ -170,14 +170,14 @@ def device_root(name: str) -> str:
     """Normalise an arbitrary top-level device root.
 
     The reMarkable tree has several top-level project roots, all siblings:
-    /104_Stacks (the Stacks substrate), /203_lightroom, etc. RM_ROOT is the
-    Stacks default; this lets any tool address a different per-project root
+    /100_thesis, /110_notes, etc. RM_ROOT is the default notes
+    tree; this lets any tool address a different per-project root
     without that root being baked into the substrate.
 
-    >>> device_root("203_lightroom")
-    '/203_lightroom'
-    >>> device_root("/104_Stacks/")
-    '/104_Stacks'
+    >>> device_root("110_notes")
+    '/110_notes'
+    >>> device_root("/100_thesis/")
+    '/100_thesis'
     """
     return "/" + name.strip("/")
 
@@ -186,21 +186,23 @@ def under(root: str, *parts: str) -> str:
     """Join device-path segments under an arbitrary device root.
 
     Generalises rm_path() (which is hardwired to RM_ROOT) to any root, so a
-    push tool can target /203_lightroom/<session>/ the same way Stacks tools
-    target /104_Stacks/Reading/<collection>/.
+    push tool can target /110_notes/<session>/ the same way the notes tools
+    target /100_thesis/Reading/<collection>/.
 
-    >>> under("203_lightroom", "session-1", "contact sheets")
-    '/203_lightroom/session-1/contact sheets'
+    >>> under("110_notes", "session-1", "contact sheets")
+    '/110_notes/session-1/contact sheets'
     """
     base = device_root(root)
     cleaned = [p.strip("/") for p in parts if p]
-    return "/".join([base, *cleaned]) if cleaned else base
+    # At the device root itself base is "/", and joining onto it as-is gave
+    # "//Sketches" (2026-10-06): RM_ROOT defaults to "/" in the public build.
+    return "/".join([base.rstrip("/"), *cleaned]) if cleaned else base
 
 
 def rm_path(*parts: str) -> str:
-    """Join device-path segments under RM_ROOT (the Stacks root).
+    """Join device-path segments under RM_ROOT (the notes tree).
 
-    Thin convenience over under() for the common Stacks case.
+    Thin convenience over under() for the common case.
 
     >>> rm_path("Reading", "Some Paper")    # with RM_ROOT=/Notes
     '/Notes/Reading/Some Paper'
@@ -209,20 +211,20 @@ def rm_path(*parts: str) -> str:
 
 
 # Reading is NOT under RM_ROOT. A third device-side reorg lifted the reading desk
-# out of /00_Projects/104_Stacks to sit at /00_Projects/Reading as a shared
-# top-level lane (found 2026-08-27, ruled deliberate by Bradley). It therefore
+# out of /00_Projects/<project> to sit at /00_Projects/Reading as a shared
+# top-level lane (found 2026-08-27, ruled deliberate). It therefore
 # carries its own overridable root instead of being derived from RM_ROOT.
 #
 # Deriving it from RM_ROOT is exactly what broke: rm_pull passes the full stored
 # path to `rmapi stat`, so after the move all 95 tracked documents stat'd as
 # missing, and the drain printed "[?] not found on device, skip" per document and
 # reported nothing to do -- indistinguishable from a clean run. Every annotation
-# made since the move sat undrained. That is the same failure the /Stacks ->
-# /104_Stacks renumber caused above; the lesson held, but the assumption that
+# made since the move sat undrained. That is the same failure the /Name ->
+# /NNN_Name renumber caused above; the lesson held, but the assumption that
 # every lane stays under one root did not.
 #
 # 2026-09-07: moved again, deliberately and this time WITH the tooling -- the
-# desk is now a first-class top-level lane at /Reading, on Bradley's instruction
+# desk is now a first-class top-level lane at /Reading, on the author's instruction
 # ("move the reading folder to myfiles/reading level"). The `rmapi mv` and the
 # 111 .rm_state.json key rewrites were done in the same operation as this edit,
 # which is the point: the constant, the device and the ledger move together or
@@ -264,7 +266,7 @@ PROJECTS_ROOT = rm_path("Projects")
 # ── outbound identity (CrossRef polite pool) ────────────────────────────────
 
 # CrossRef serves requests carrying a contact address from a faster, more
-# reliable pool. The literature tools each hardcoded ONE address -- Bradley's
+# reliable pool. The literature tools each hardcoded ONE address -- the author's
 # personal email, in six files -- which made the address impossible to change,
 # and made a documented setting a lie: README.public.md has advertised
 # CROSSREF_CONTACT_EMAIL as a supported variable since the first public build,
@@ -300,7 +302,7 @@ def polite_user_agent(product: str, version: str = "1.0",
 # forthcoming rm-mcp read one env-overridable path. Override with RMAPI_BIN.
 # Defaults to the bare name so it resolves on PATH. This file SHIPS in the
 # public manifest, and until 2026-09-06 the default was an absolute path
-# inside Bradley's home directory -- which no other machine has, so the
+# inside the author's home directory -- which no other machine has, so the
 # first thing a stranger met was a missing-binary error naming a
 # stranger's user account. Set RMAPI_BIN to an absolute path if your
 # rmapi is not on PATH.
@@ -377,13 +379,13 @@ RMAPI_BIN = RMAPI_RESOLVED or RMAPI_BIN_CONFIGURED
 # gemini-3.1-pro) shipped across ten files at once because each file pinned
 # its own.
 #
-# CORRECTED 2026-09-20 (crosstalk 0b439074, homelab). This comment asserted a
+# CORRECTED 2026-09-20. This comment asserted a
 # 2.5 retirement on 2026-10-16. THERE IS NO SUCH DATE: Google's deprecations
 # page lists the undated base ids gemini-2.5-flash / gemini-2.5-pro as "no
 # shutdown date announced", and the 2026-10-16 figure was manufactured by
 # reading the DATED preview snapshots' real shutdown dates onto the undated
-# base ids. A lockout is not a retirement. roundtrip.py and SHIP-FLAVOUR-2.md
-# were corrected when homelab found this; THIS file, which those corrections
+# base ids. A lockout is not a retirement. roundtrip.py and the ship notes
+# were corrected when this was found; THIS file, which those corrections
 # cite as their source, was missed -- so the false date outlived its own
 # correction by three days in the one place most likely to be copied from.
 #
@@ -685,7 +687,7 @@ THROTTLE_HINTS: tuple[str, ...] = (
 EXIT_STATE_LOCKED = 3
 EXIT_THROTTLED = 4
 
-# Bradley's ruling 2026-10-01: five minutes. Env RM_THROTTLE_COOLDOWN_S.
+# Ruled 2026-10-01: five minutes. Env RM_THROTTLE_COOLDOWN_S.
 DEFAULT_THROTTLE_COOLDOWN_S = 300.0
 # How long a call waits for another rm tool's rmapi call to finish. A single
 # call is bounded by its own timeout (300s for a get), so this covers a short
@@ -726,7 +728,7 @@ class RmapiNotFoundError(RmapiError):
     as a bare OSError. That escape is what produced "[WinError 2] The system
     cannot find the file specified" from rm_ensure_project_folder on
     2026-09-20 -- an error that never mentions rmapi and points the caller at
-    their own arguments (crosstalk 7981b341, 305_krisis).
+    their own arguments (reported 2026-09-20).
 
     FileNotFoundError is an OSError, NOT a RuntimeError, which is exactly why
     it slipped past handlers that looked complete.

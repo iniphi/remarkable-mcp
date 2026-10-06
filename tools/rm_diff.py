@@ -41,7 +41,7 @@ deleted items are noise for "what did I actually work on". Override with
 Usage:
     python tools/rm_diff.py                      # diff whole device, then re-baseline
     python tools/rm_diff.py --no-update          # preview delta, do NOT move the baseline
-    python tools/rm_diff.py --root /104_Stacks   # scope to one subtree
+    python tools/rm_diff.py --root /100_thesis   # scope to one subtree
     python tools/rm_diff.py --ignore Draw --ignore trash --ignore "Business Time"
     python tools/rm_diff.py --all                # also list unchanged docs
     python tools/rm_diff.py --out diff.json      # write the change manifest as JSON
@@ -70,7 +70,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 RMAPI = RMAPI_BIN
-# From rm_config, not Path(__file__).parent: the tools/ split (S112) put this
+# From rm_config, not Path(__file__).parent: the tools/ split (2026-09-20) put this
 # module in a bucket, and a bare .parent moved the snapshot to
 # tools/rm/.rm_device_snapshot.json -- a fresh empty baseline, so the next
 # /rm-diff would have reported the whole device as changed. rm_config resolves
@@ -165,7 +165,7 @@ _MONTHS = {m: i for i, m in enumerate(
      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
 
 # `rmapi ls -l` prints a fixed-width date prefix then the name to end of line:
-#   "Jul  9 2026  10:17  200_poetics/"        (single-digit day: extra space)
+#   "Jul  9 2026  10:17  120_drafts/"        (single-digit day: extra space)
 #   "Jun 17 2026  15:51  Merton 1968 - ..."    (a file: no trailing slash)
 _LS_LINE = re.compile(
     r"^(?P<mon>[A-Za-z]{3})\s+(?P<day>\d{1,2})\s+(?P<year>\d{1,4})\s+"
@@ -297,7 +297,7 @@ def is_ignored(device_path: str, ignore: tuple[str, ...]) -> bool:
 
     Why "Daily Life/Calendar" needs this: confirmed live 2026-09-10 that
     `rmapi find`'s own path separator is backslash (even `find /00_Projects`
-    prints `00_Projects\\203_lightroom\\...`), but find ALSO escapes a literal
+    prints `00_Projects\\110_notes\\...`), but find ALSO escapes a literal
     "/" inside one filename as "\\" -- the same character. The Calendar
     MM/YY entries are single flat files whose real name literally contains a
     "/" (`ls -l "/Daily Life/Calendar"` shows one file named "04/25", not a
@@ -329,7 +329,7 @@ def top_area(device_path: str) -> str:
     parts = device_path.strip("/").split("/")
     rm_top = RM_ROOT.strip("/")
     if parts and parts[0] == rm_top and len(parts) >= 2:
-        return f"{rm_top}/{parts[1]}"          # e.g. 104_Stacks/Reading
+        return f"{rm_top}/{parts[1]}"          # e.g. 100_thesis/Reading
     return parts[0] if parts else "/"
 
 

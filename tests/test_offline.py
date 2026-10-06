@@ -20,10 +20,10 @@ from rm_mcp import config, envelope, runner  # noqa: E402
 
 class TestResolveProject(unittest.TestCase):
     def test_explicit_wins(self):
-        self.assertEqual(config.resolve_project("101_Overseer"), "101_Overseer")
+        self.assertEqual(config.resolve_project("101_Demo"), "101_Demo")
 
     def test_explicit_strips_slashes(self):
-        self.assertEqual(config.resolve_project("/104_stacks/"), "104_stacks")
+        self.assertEqual(config.resolve_project("/120_drafts/"), "120_drafts")
 
     def test_rejects_path_traversal(self):
         for bad in ("101/evil", "..", "101_a/../b", "a\\b"):
@@ -33,7 +33,7 @@ class TestResolveProject(unittest.TestCase):
     def test_rejects_non_code(self):
         """NNN_name is the desk's shape (tools/.env). The public default accepts
         any folder name since 2026-09-10, so there the same inputs resolve."""
-        for name in ("Overseer", "1_x", "abcd_x"):
+        for name in ("Drafts", "1_x", "abcd_x"):
             if config._IS_NNN_PATTERN:
                 with self.assertRaises(ValueError):
                     config.resolve_project(name)
@@ -43,9 +43,9 @@ class TestResolveProject(unittest.TestCase):
     def test_env_fallback(self):
         import os
         old = os.environ.get("CLAUDE_PROJECT_DIR")
-        os.environ["CLAUDE_PROJECT_DIR"] = r"C:\projects\203_lightroom"
+        os.environ["CLAUDE_PROJECT_DIR"] = r"C:\projects\110_notes"
         try:
-            self.assertEqual(config.resolve_project(None), "203_lightroom")
+            self.assertEqual(config.resolve_project(None), "110_notes")
         finally:
             if old is None:
                 del os.environ["CLAUDE_PROJECT_DIR"]
@@ -54,8 +54,8 @@ class TestResolveProject(unittest.TestCase):
 
     def test_device_dir(self):
         root = config.PROJECTS_DEVICE_ROOT.rstrip("/")   # "" when the root is "/"
-        self.assertEqual(config.project_device_dir("101_Overseer"),
-                         f"{root}/101_Overseer")
+        self.assertEqual(config.project_device_dir("101_Demo"),
+                         f"{root}/101_Demo")
 
 
 class TestSafeFilenameStem(unittest.TestCase):

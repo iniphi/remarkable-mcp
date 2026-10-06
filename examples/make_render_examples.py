@@ -4,8 +4,8 @@ make_render_examples.py -- generate NEUTRAL synthetic render examples for rm-mcp
 
 Why this exists: the private render test-suite goldens
 (rm-mcp/tests/fixtures/render/*/_goldens/*.golden.png) are pixel-locked to
-pages of Bradley's own handwriting and are correctly withheld from the public
-repo (rm-mcp/SHIP-FLAVOUR-2.md section 4). That leaves nothing publishable
+pages of the author's own handwriting and are correctly withheld from the public
+repo. That leaves nothing publishable
 that actually shows the render pipeline working. This script closes that gap
 with two fully synthetic native-notebook pages -- every coordinate below is
 computed by this script, not copied, traced, or derived from any real

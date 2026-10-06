@@ -20,7 +20,7 @@ Usage:
         --text "# Heading\nSome text" \\
         --out out.rmdoc \\
         --push \\
-        --device-dir "/104_Stacks/Projects/Poetics/Ch1"
+        --device-dir "/100_thesis/Projects/Poetics/Ch1"
 
     python tools/rm_make_text_notebook.py \\
         --title "Test" \\
@@ -61,7 +61,7 @@ import rmscene.scene_items as si
 from rm_config import cli_main, run_rmapi
 
 # The tools/ ROOT in either layout. The .py files moved into buckets in the
-# 2026-09-20 (S112) split; the DATA beside them -- prompts/, rm_workspace/,
+# 2026-09-20 split; the DATA beside them -- prompts/, rm_workspace/,
 # zotero_plans/, litgather_plans/, the .json manifests -- did not. So a bare
 # Path(__file__).parent here points one level too deep and silently names a
 # directory that does not exist.

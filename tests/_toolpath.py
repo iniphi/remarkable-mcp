@@ -3,11 +3,11 @@
 Ships with the public tree (rm_build_public.TEST_SUPPORT_FILES), because the
 tests that use it ship too and it has to give the right answer in both trees:
 
-    private (104_stacks):  tools/rm/rm_render_page.py
-    public  (standalone):  tools/rm_render_page.py
+    private monorepo:        tools/rm/rm_render_page.py
+    public (standalone):   tools/rm_render_page.py
 
 tools/ was split into rm/, zotero/, litgather/ and common/ on 2026-09-20
-(S112); the public build keeps copying the manifest flat, so both shapes are
+the public build keeps copying the manifest flat, so both shapes are
 live at once. Ten places across seven test modules built a flat path by hand
 and every one of them broke on the desk while staying correct in the tree they
 were written for -- which is the argument for asking one function.

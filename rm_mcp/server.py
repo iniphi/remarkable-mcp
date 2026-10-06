@@ -218,7 +218,7 @@ async def rm_health(write_probe: bool = False) -> dict:
         # short-circuited the auth probe, so this tool reported the device
         # unreachable on healthy installs and, on broken ones, reported
         # "authenticated: null" as though it had asked the cloud when it had
-        # never run rmapi at all (crosstalk 7981b341, 305_krisis).
+        # never run rmapi at all (reported 2026-09-20).
         resolved = config.RMAPI_RESOLVED
         auth = device.auth_probe() if resolved else {
             "authenticated": None, "detail": RMAPI_NOT_FOUND_REMEDY}
@@ -314,7 +314,7 @@ async def rm_health(write_probe: bool = False) -> dict:
     data = await asyncio.to_thread(probe)
 
     # An envelope that reports its own transport missing must not be green.
-    # Ruled 2026-09-20 answering crosstalk 7981b341: "a report whose own body
+    # Ruled 2026-09-20 in answer to a report: "a report whose own body
     # says the tool is absent should not be green." The data block is returned
     # in full either way -- the caller loses nothing by the honesty.
     if not data["rmapi_binary"]["resolved"]:
@@ -372,7 +372,7 @@ async def rm_ensure_project_folder(project: str | None = None) -> dict:
     """Create /Projects/<code>/ on the device (idempotent).
 
     Case-canonicalized against the device (V2-8): if a folder with different
-    casing already exists (200_poetics vs 200_Poetics), the existing folder
+    casing already exists (110_notes vs 110_Notes), the existing folder
     is reused and a project_case_matched warning is attached.
 
     Args:

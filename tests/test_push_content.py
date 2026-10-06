@@ -60,16 +60,16 @@ class TestValidationGuards(unittest.TestCase):
     """These return before any render, so no monkeypatch / device is involved."""
 
     def test_unknown_mode_errors(self):
-        r = roundtrip.render_and_push_content("pdf", "x", "104_Stacks", None)
+        r = roundtrip.render_and_push_content("pdf", "x", "100_thesis", None)
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"]["system"], "config")
 
     def test_empty_content_errors(self):
-        r = roundtrip.render_and_push_content("markdown", "   \n ", "104_Stacks", None)
+        r = roundtrip.render_and_push_content("markdown", "   \n ", "100_thesis", None)
         self.assertFalse(r["ok"])
 
     def test_native_requires_title(self):
-        r = roundtrip.render_and_push_content("native", "# Notes\n- a", "104_Stacks", None)
+        r = roundtrip.render_and_push_content("native", "# Notes\n- a", "100_thesis", None)
         self.assertFalse(r["ok"])
         self.assertIn("title", r["error"]["message"].lower())
 
@@ -86,20 +86,20 @@ class TestRenderThenPush(unittest.TestCase):
     @needs_pdf_engine
     def test_markdown_renders_pdf_then_pushes(self):
         r = roundtrip.render_and_push_content(
-            "markdown", "# Title\n\nBody paragraph.", "104_Stacks", "Brief")
+            "markdown", "# Title\n\nBody paragraph.", "100_thesis", "Brief")
         self.assertTrue(r["ok"], r)
         self.assertIsNotNone(self.spy.pushed)
         self.assertEqual(self.spy.pushed.suffix, ".pdf")
         self.assertTrue(self.spy.pushed.is_file())
         self.assertGreater(self.spy.pushed.stat().st_size, 0)
-        self.assertEqual(self.spy.project, "104_Stacks")
+        self.assertEqual(self.spy.project, "100_thesis")
         # wrapper stamps mode + rendered_from onto the pushed envelope
         self.assertEqual(r["data"]["mode"], "markdown")
         self.assertTrue(r["data"]["rendered_from"].endswith(".src"))
 
     def test_native_renders_rmdoc_then_pushes(self):
         r = roundtrip.render_and_push_content(
-            "native", "# Notes\n- one\n- two", "104_Stacks", "Notes")
+            "native", "# Notes\n- one\n- two", "100_thesis", "Notes")
         self.assertTrue(r["ok"], r)
         self.assertEqual(self.spy.pushed.suffix, ".rmdoc")
         self.assertTrue(self.spy.pushed.is_file())
