@@ -5,12 +5,27 @@ agent: push documents to the tablet, write on them in ink or type on them
 with the keyboard, pull the result back as text, highlights and page images
 the agent can read and act on.
 
+> **Unofficial.** This is an independent project. It is not made,
+> endorsed or supported by reMarkable AS, and it is not affiliated with the
+> rmapi project or with Anthropic. It reaches your tablet through the
+> reMarkable cloud using an unofficial client, not a published API, so
+> reMarkable can change that cloud at any time and break it, as happened in
+> August 2026. Use it at your own risk. "reMarkable" is a trademark of
+> reMarkable AS.
+
 The loop is push, write, pull, read, route. An agent creates a notebook or
 sends you a document; you mark it up on e-paper, away from a screen; the
 marks come back; the agent tells you what it found, separates notes from
 instructions, and files each where you said it should go.
 
 If you are an agent reading this repository, `CLAUDE.md` is your copy.
+
+## How this was built
+
+This project was vibe-coded: the code was written by Claude (Anthropic) in
+Claude Code, with me directing, reviewing and testing it against a real
+reMarkable 2. Every tool has been run against the device and the test suite
+runs on every build, but the code was not written by hand.
 
 ## You need a reMarkable 2
 
@@ -267,6 +282,20 @@ day one teaches everyone to ignore the badge.
 `examples/make_render_examples.py` from computed coordinates, so the render
 output can be shown without publishing anyone's handwriting. Regenerate with
 `python examples/make_render_examples.py`.
+
+## Thanks
+
+rm-mcp stands on [rmapi](https://github.com/ddvk/rmapi), started by
+[juruen](https://github.com/juruen/rmapi) and maintained by
+[ddvk](https://github.com/ddvk/rmapi) and its contributors. Every call this
+server makes to the reMarkable cloud goes through it, and their fix for the
+August 2026 sorting change is what made writes work again. No rmapi code is
+copied here: rm-mcp runs the rmapi binary as a separate program (see
+"Third-party").
+
+The ink is read by [rmscene](https://github.com/ricklupton/rmscene), Rick
+Lupton's parser for the reMarkable's `.rm` format, and pages are rasterised
+with [pypdfium2](https://github.com/pypdfium2-team/pypdfium2).
 
 ## Third-party
 
