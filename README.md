@@ -34,8 +34,15 @@ git clone https://github.com/iniphi/remarkable-mcp.git && cd remarkable-mcp
 python -m venv .venv
 .venv/Scripts/python -m pip install -e ".[test]"     # Windows
 .venv/bin/python -m pip install -e ".[test]"         # macOS / Linux
-.venv/bin/python run_server.py --init
+.venv/Scripts/python run_server.py --init            # Windows
+.venv/bin/python run_server.py --init                # macOS / Linux
 ```
+
+On Windows, if the clone stops with `Filename too long`, the folder you cloned
+into is too deep: the test fixtures mirror the tablet's own document layout,
+and the longest path inside the repo is 139 characters, against Windows' 260.
+Clone somewhere shorter, or run `git config --global core.longpaths true`
+first.
 
 `--init` walks you through it: checks the Python side, finds rmapi and hands
 it the terminal if it still needs pairing, lists the top-level folders on
