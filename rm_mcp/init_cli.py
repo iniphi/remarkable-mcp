@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import date
@@ -54,6 +55,21 @@ _RMAPI_BUILD_HINT = (
     "    go install github.com/ddvk/rmapi@f295d54\n"
     "then run `rmapi` once to pair (it prints a URL and asks for the\n"
     "one-time code from my.remarkable.com/device/desktop/connect).")
+
+
+_DRIVE_RE = re.compile(r"^/?[A-Za-z]:")
+
+_WINDOWS_PATH_REFUSAL = (
+    "[x] {value!r} looks like a Windows path, not a device folder. Git Bash "
+    "rewrites arguments that start with '/'. Re-run with MSYS_NO_PATHCONV=1 in "
+    "front, use PowerShell or cmd, or answer the question interactively. "
+    "Nothing was written.")
+
+
+def looks_like_windows_path(value: str) -> bool:
+    """A device folder never has a drive letter or a backslash."""
+    v = value.strip()
+    return "\\" in v or bool(_DRIVE_RE.match(v))
 
 
 def _say(msg: str = "") -> None:
@@ -241,12 +257,17 @@ def run(argv: list[str] | None = None) -> int:
     projects_root = args.projects_root or _ask(
         "Folder your projects live under ('/' = the device root, a project is "
         "any top-level folder you name)", "/", yes)
-    projects_root = "/" + projects_root.strip().strip("/")
     managed = args.managed_roots
     if managed is None:
         managed = _ask("Folders rm_move and rm_delete may touch, comma-separated "
                        "(blank = the whole device)", "", yes)
-    managed = ",".join(p.strip() for p in managed.split(",") if p.strip()) if managed else ""
+    entries = [p.strip() for p in managed.split(",") if p.strip()] if managed else []
+    for value in [projects_root, *entries]:
+        if looks_like_windows_path(value):
+            print(_WINDOWS_PATH_REFUSAL.format(value=value), file=sys.stderr, flush=True)
+            return 2
+    projects_root = "/" + projects_root.strip().strip("/")
+    managed = ",".join("/" + p.strip("/") for p in entries)
 
     # 4. .env
     updates = {"RMAPI_BIN": rmapi or args.rmapi,

@@ -242,6 +242,16 @@ async def rm_health(write_probe: bool = False) -> dict:
             if not auth.get("authenticated"):
                 write = {"writable": None,
                          "detail": "skipped: cloud not authenticated"}
+            elif projects_root_exists is False:
+                # Unknown, not False: probing inside a missing folder fails
+                # with "directory doesn't exist" whatever the device allows,
+                # and probing at "/" would write outside the fenced root.
+                write = {"writable": None,
+                         "detail": ("skipped: the projects root "
+                                    f"{config.PROJECTS_DEVICE_ROOT} does not "
+                                    "exist yet, so the probe had nowhere to "
+                                    "write. rm_ensure_project_folder or any "
+                                    "push creates it; re-run the probe after.")}
             else:
                 try:
                     write = device.write_probe(
@@ -484,7 +494,8 @@ async def rm_push_image(path: str, project: str | None = None,
     """Convert a local image to a one-page PDF and push it to /Projects/<code>/.
 
     For staging diagrams, screenshots, or generated figures for pen
-    annotation. Conversion runs pymupdf in a child process.
+    annotation. Conversion uses Pillow in-process and needs no PDF engine
+    (PyMuPDF is not required).
 
     Args:
         path: Absolute path to a .png/.jpg/.jpeg/.webp file.
@@ -504,7 +515,7 @@ async def rm_push_image(path: str, project: str | None = None,
             roundtrip.convert_image_to_pdf(local, pdf_path)
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
             return err_result("config", str(exc),
-                              "confirm pymupdf is importable under the server "
+                              "confirm Pillow is installed under the server "
                               "interpreter and the image is readable")
         result = roundtrip.push_local_file(pdf_path, project, None)
         if result["ok"]:
@@ -748,7 +759,10 @@ async def rm_get_highlights(extracted_dir: str) -> dict:
         extracted_dir: Path to an unzipped .rmdoc directory (e.g. the
             extracted_dir returned by rm_pull_project).
     Returns:
-        RmResult with data.highlights = [{page, bbox, text, color, source}].
+        RmResult with data.highlights = [{pdf_page, bbox_pdf, rects_pdf,
+        stroke_color, text, source, n_points, n_merged}]. source is "glyph"
+        (snap-to-text; n_points is null) or "stroke" (freehand). Key by
+        pdf_page, not page.
     """
     def builder(proc: subprocess.CompletedProcess) -> dict:
         return {"highlights": json.loads(proc.stdout)}

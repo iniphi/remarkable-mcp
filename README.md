@@ -53,7 +53,10 @@ with the right interpreter path. Re-running it merges into what you have and
 leaves an edited `CREATION.md` alone.
 
 Every question has a flag (`--init --yes --projects-root / --notes-to "..."`),
-so an agent can run the whole walk on your behalf. `run_server.py --check`
+so an agent can run the whole walk on your behalf. In Git Bash on Windows,
+put `MSYS_NO_PATHCONV=1` in front of the command: Git Bash rewrites any
+argument starting with `/` into a Windows path, and `--init` refuses to store
+one. `run_server.py --check`
 prints the tool count and exits; `rm_health`, once the server is registered,
 reports everything else.
 
@@ -142,9 +145,10 @@ your edit took.
 **One caveat:** `rm_create` needs a PDF engine, and this package does not
 install one. PyMuPDF is AGPL-3.0; bundling it would relicense the project, so
 it is deliberately absent (see *Third-party* below). `pip install pymupdf` in your
-venv if you want `rm_create`, `rm_render` and the flatten step — that is your
-call to make, not the package's. `rm_new_notebook` and `rm_push_pdf` work with
-no PDF engine at all.
+venv if you want `rm_create`, or the `markdown`, `html` and `svg` modes of
+`rm_push_content` — that is your call to make, not the package's. Everything
+else works with no PDF engine at all: `rm_new_notebook`, the other push tools,
+`rm_render`, `rm_page_image` and the pull tools (rendering runs on pypdfium2).
 
 A project is a folder. By default projects live at the device root, so
 `project="Thesis"` is `/Thesis`; set `RM_MCP_PROJECTS_ROOT` if you keep them

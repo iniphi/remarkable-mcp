@@ -594,13 +594,19 @@ def overlay_strokes(
         rects = getattr(gr, "rectangles", None) or []
         if not rects:
             continue
-        # Colour from GlyphRange.color_rgba (0..255), default yellow highlighter
+        # Colour from GlyphRange.color_rgba (0..255) only when it carries a
+        # real colour. Device files store (0, 0, 0, 255) for ordinary
+        # highlights, so an all-zero RGB is "unset", not black: derive the
+        # fill from the PenColor enum via COLOR_RGBA, then default yellow.
         c_rgba = getattr(gr, "color_rgba", None)
-        if c_rgba:
-            # Force translucent regardless of stored alpha so text shows through
-            rgba_fill = (c_rgba[0], c_rgba[1], c_rgba[2], 130)
+        pen_color = getattr(gr, "color", None)
+        pen_key = getattr(pen_color, "value", pen_color)
+        if c_rgba and any(c_rgba[:3]):
+            base = c_rgba
         else:
-            rgba_fill = (250, 230, 100, 130)
+            base = COLOR_RGBA.get(pen_key, (250, 230, 100, 130))
+        # Force translucent regardless of stored alpha so text shows through
+        rgba_fill = (base[0], base[1], base[2], 130)
         for r in rects:
             x0, y0 = _rm_to_canvas(r.x, r.y)
             x1, y1 = _rm_to_canvas(r.x + r.w, r.y + r.h)

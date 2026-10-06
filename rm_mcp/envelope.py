@@ -94,6 +94,12 @@ REMEDIES = {
         "token and extend the throttle. rm_health shows the cooldown without "
         "calling the cloud."
     ),
+    "name_exists": (
+        "a document or folder with that name already exists at that device "
+        "path. Pass a different title, or move or delete the existing one "
+        "first (rm_list shows it; rm_move / rm_delete with dry_run=False). "
+        "Repeating the same call fails the same way."
+    ),
     "collection_not_found": (
         "the Zotero collection key 404'd: pass the collection NAME (the "
         "server resolves names to keys), or verify the key with the Zotero "
@@ -219,6 +225,11 @@ def err_from_exception(exc: Exception, system: str, remedy: str,
     A throttle is re-attributed the same way, for the opposite reason: its
     callers' generic remedies say "retry", which is the one thing it must not.
 
+    So is a name conflict ("entry already exists"): it is the device's state,
+    not a reachability fault, and repeating the call fails identically. Found
+    live 2026-10-06 when a second push under the same title came back as a
+    cloud error telling the agent to check reachability and retry.
+
     Everything else passes through with the caller's own attribution.
     """
     if isinstance(exc, RmapiThrottledError):
@@ -226,8 +237,16 @@ def err_from_exception(exc: Exception, system: str, remedy: str,
     if isinstance(exc, RmapiNotFoundError):
         return err_result("rmapi", str(exc), REMEDIES["rmapi_not_found"],
                           data=data, tail=tail, warnings=warnings)
+    if looks_like_name_conflict(str(exc)):
+        return err_result("device", str(exc), REMEDIES["name_exists"],
+                          data=data, tail=tail, warnings=warnings)
     return err_result(system, str(exc), remedy,
                       data=data, tail=tail, warnings=warnings)
+
+
+def looks_like_name_conflict(message: str) -> bool:
+    """rmapi refused because the target name is already taken on the device."""
+    return "entry already exists" in message.lower()
 
 
 # Fallback log-line signatures for CLIs that do not (yet) emit structured

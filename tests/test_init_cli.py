@@ -106,5 +106,48 @@ class TestNonInteractive(InitCase):
         self.assertIn("go install github.com/ddvk/rmapi", out)
 
 
+class TestWindowsPathRefused(InitCase):
+    """Git Bash rewrites `/x` into `C:/Program Files/Git/x` before Python sees it."""
+
+    def run_refused(self, *argv: str) -> str:
+        from io import StringIO
+        out, err = StringIO(), StringIO()
+        with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            rc = init_cli.run(["--yes", *argv])
+        self.assertNotEqual(rc, 0)
+        self.assertFalse(self.env.is_file(), "a refused answer must not reach .env")
+        message = out.getvalue() + err.getvalue()
+        self.assertIn("MSYS_NO_PATHCONV=1", message)
+        self.assertIn("Windows path", message)
+        return message
+
+    def test_projects_root_with_drive_is_refused(self):
+        self.run_refused("--projects-root", "C:/Program Files/Git/rm-mcp-fft")
+
+    def test_projects_root_with_leading_slash_drive_is_refused(self):
+        self.run_refused("--projects-root", "/C:/Program Files/Git/x")
+
+    def test_projects_root_with_backslash_is_refused(self):
+        self.run_refused("--projects-root", "\\Work\\Sub")
+
+    def test_managed_root_with_drive_is_refused(self):
+        self.run_refused("--managed-roots", "/Work,C:/Program Files/Git/rm-mcp-fft")
+
+    def test_managed_root_with_backslash_is_refused(self):
+        self.run_refused("--managed-roots", "\\Work")
+
+    def test_normal_roots_still_work(self):
+        self.run_init("--projects-root", "/Projects")
+        self.assertIn("RM_MCP_PROJECTS_ROOT=/Projects\n", self.env.read_text(encoding="utf-8"))
+        self.env.unlink()
+        self.run_init("--projects-root", "/")
+        self.assertIn("RM_MCP_PROJECTS_ROOT=/\n", self.env.read_text(encoding="utf-8"))
+
+    def test_managed_roots_without_leading_slash_are_normalised(self):
+        self.run_init("--managed-roots", "Reading, /Notes")
+        self.assertIn("RM_MCP_MANAGED_ROOTS=/Reading,/Notes\n",
+                      self.env.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
