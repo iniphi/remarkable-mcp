@@ -58,7 +58,8 @@ The eval verdict ruling GO on the swap (min SSIM 0.943, native fixtures
 byte-identical) is at rm-mcp/tests/fixtures/render/PYPDFIUM2_EVAL.md. This
 docstring previously cited ForClaude/PYPDFIUM2_EVAL.md, which does not exist.
 
-`remote` is therefore the full six tools of its documented surface, and
+`remote` is therefore the full seven tools of its documented surface (six
+when SHIP-FLAVOUR-2.md was written, plus rm_create from 2026-09-20), and
 BLOCKED_ON_RENDER_PORT is empty. It is kept as an empty frozenset rather than
 deleted so that test_surface.py's guard against silently re-adding a blocked
 tool still has something to assert against.

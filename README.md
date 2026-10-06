@@ -24,8 +24,8 @@ touches the device fails at the first call.
 - **[rmapi](https://github.com/ddvk/rmapi)**, built from source, paired once.
   See "Third-party" below for why from source.
 - **Python 3.10 or newer.**
-- Optionally, a **Gemini API key**. Nothing here needs one: the agent that
-  calls the server reads the page images itself.
+- No vision API key. The agent that calls the server reads the page images
+  itself; the Gemini and Claude vision backends are not part of this build.
 
 ## Install
 
@@ -189,7 +189,7 @@ ones that matter:
 | `RM_MCP_PROJECTS_ROOT` | Where projects live. Default `/`, the device root |
 | `RM_MCP_MANAGED_ROOTS` | Folders `rm_move`, `rm_delete` and `rm_push_dir` may touch. Default: the two roots, which at `/` is the whole device. `rm_health` reports `guard_scope` so that is never silent |
 | `RM_MCP_PROJECT_PATTERN` | Shape of a project folder name. Default: any name |
-| `GEMINI_API_KEY` | Not needed. Kept for tools that are not in this build |
+| `GEMINI_API_KEY` | Not needed. The vision backends that read it are not in this build |
 
 ### The network lane (optional)
 
@@ -228,10 +228,10 @@ the pairing at start is all it takes.
 .venv/bin/python -m pytest
 ```
 
-Offline, no device, no network. One failure is expected on a clean install:
-`test_push_content.py::TestRenderThenPush::test_markdown_renders_pdf_then_pushes`
-needs PyMuPDF, which is deliberately not a dependency. Everything else must
-pass. The render path has a regression guard on synthetic fixtures under
+Offline, no device, no network. On a clean install the suite is green, with
+the tests that need PyMuPDF skipped (for example
+`test_push_content.py::TestRenderThenPush::test_markdown_renders_pdf_then_pushes`):
+PyMuPDF is deliberately not a dependency. A skip is expected; a failure is not. The render path has a regression guard on synthetic fixtures under
 `tests/fixtures/render_neutral/`, every byte of which is computed by
 `tests/gen_neutral_fixtures.py`; no real handwriting ships.
 

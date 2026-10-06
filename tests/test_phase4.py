@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -132,6 +133,29 @@ class TestMoveDelete(unittest.TestCase):
                                         allow_anywhere=False)
         self.assertFalse(result["ok"])
         self.assertIn("never recurses", result["error"]["remedy"])
+
+    def test_delete_refuses_when_contents_cannot_be_listed(self):
+        # A folder whose contents could not be read is not an empty folder.
+        # Until 2026-10-01 a failed child listing set children = [] and the
+        # delete went ahead on a folder nobody had looked inside.
+        failures = (RuntimeError("rmapi ls failed: connection reset by peer"),
+                    subprocess.TimeoutExpired(cmd="rmapi", timeout=30))
+        for failure, dry_run in [(f, d) for f in failures for d in (True, False)]:
+            with self.subTest(failure=type(failure).__name__, dry_run=dry_run):
+                def fake_ls(path, timeout=30, failure=failure):
+                    if path == PROOT_DIR:
+                        return [{"name": "999_t", "type": "folder"}]
+                    raise failure
+
+                with mock.patch.object(device, "ls", side_effect=fake_ls), \
+                        mock.patch.object(device, "rm") as rm:
+                    result = manage.delete_impl(f"{PROOT}/999_t",
+                                                dry_run=dry_run,
+                                                allow_anywhere=False)
+                rm.assert_not_called()
+                self.assertFalse(result["ok"])
+                self.assertIn("could not be listed", result["error"]["message"])
+                self.assertNotIn("plan", result["data"])
 
     def test_delete_dry_run_classifies_doc(self):
         # rmapi ls on a DOC path succeeds and lists the doc itself

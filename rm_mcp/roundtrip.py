@@ -33,7 +33,8 @@ from typing import Any
 from . import config, device
 from .config import new_out_dir, rm_config, safe_filename_stem
 from .envelope import (err_from_exception, err_result, make_warning,
-                       ok_result, RmapiAuthError, REMEDIES)
+                       ok_result, RmapiAuthError, RmapiThrottledError,
+                       REMEDIES, throttled_result)
 from .runner import run_script
 
 # Mirrors rm_pull.py's backend dispatch (VISION_BACKENDS / model ids).
@@ -599,6 +600,8 @@ def render_doc(device_path: str | None, extracted: str | None,
             bundle = device.get(device_path, out / "download")
         except RmapiAuthError as exc:
             return err_result("rmapi", str(exc), REMEDIES["not_authenticated"])
+        except RmapiThrottledError as exc:
+            return throttled_result(exc)
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
             return err_result(
                 "cloud", f"could not fetch {device_path}: {exc}",
@@ -692,6 +695,8 @@ def pull_project_doc(name: str, project: str | None,
         bundle = device.get(device_path, out / "download")
     except RmapiAuthError as exc:
         return err_result("rmapi", str(exc), REMEDIES["not_authenticated"])
+    except RmapiThrottledError as exc:
+        return throttled_result(exc)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         return err_result(
             "cloud", f"could not fetch {device_path}: {exc}",

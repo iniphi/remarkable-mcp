@@ -58,7 +58,7 @@ from rmscene import (
 )
 import rmscene.scene_items as si
 
-from rm_config import RMAPI_BIN
+from rm_config import cli_main, run_rmapi
 
 # The tools/ ROOT in either layout. The .py files moved into buckets in the
 # 2026-09-20 (S112) split; the DATA beside them -- prompts/, rm_workspace/,
@@ -80,8 +80,6 @@ STYLE_MAP: dict[str, si.ParagraphStyle] = {
 
 TEXT_START_SEQ = 16
 STYLE_TIMESTAMP_SEQ = 15
-
-RMAPI = RMAPI_BIN
 
 # -- notebook templates -------------------------------------------------------
 # What a freshly created notebook opens as: page margin, the pen the toolbar
@@ -395,20 +393,17 @@ def roundtrip_check(rmdoc_path: str) -> None:
 
 
 def push_rmdoc(rmdoc_path: str, device_dir: str, dry_run: bool = False) -> None:
-    import subprocess
-    env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
-    cmd_mkdir = [RMAPI, "mkdir", device_dir]
-    cmd_put = [RMAPI, "put", rmdoc_path, device_dir]
-
     if dry_run:
         print(f"[dry-run] mkdir {device_dir}")
         print(f"[dry-run] put {rmdoc_path} -> {device_dir}")
         return
 
+    # Through run_rmapi, not a bare subprocess: the shared lock and the 429
+    # cooldown only hold if every rmapi call takes the same path.
     print(f"mkdir {device_dir}")
-    subprocess.run(cmd_mkdir, env=env, check=False)
+    run_rmapi("mkdir", device_dir, check=False)
     print(f"put {rmdoc_path} -> {device_dir}")
-    result = subprocess.run(cmd_put, env=env, capture_output=True, text=True)
+    result = run_rmapi("put", rmdoc_path, device_dir, check=False)
     if result.returncode != 0:
         print(f"  ERROR: {result.stderr.strip()}")
     else:
@@ -484,4 +479,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli_main(main)

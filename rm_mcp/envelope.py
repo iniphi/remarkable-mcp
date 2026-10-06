@@ -50,6 +50,9 @@ RmapiAuthError = rm_config.RmapiAuthError
 # in server.py already turns a missing binary into a named err_result instead of
 # letting a bare OSError escape as "[WinError 2]".
 RmapiNotFoundError = rm_config.RmapiNotFoundError
+# Also an RmapiError -> RuntimeError. Handlers that read a RuntimeError as
+# "absent" or "empty" must catch this one FIRST (throttled_result below).
+RmapiThrottledError = rm_config.RmapiThrottledError
 RMAPI_NOT_FOUND_REMEDY = rm_config.RMAPI_NOT_FOUND_REMEDY
 looks_unauthenticated = rm_config.looks_unauthenticated
 make_warning = rm_config.make_warning
@@ -82,6 +85,14 @@ REMEDIES = {
     "state_locked": (
         "another rm tool holds tools/.rm_state.lock (likely an rm_pull/"
         "rm_push in another Claude window); wait for it to finish and retry."
+    ),
+    "rmapi_throttled": (
+        "the reMarkable cloud is rate-limiting this account (HTTP 429). WAIT "
+        "until data.throttled_until before any rm tool call that reaches the "
+        "cloud, and tell the person when that is: every rm tool refuses until "
+        "then, and a retry that got through sooner would re-mint the login "
+        "token and extend the throttle. rm_health shows the cooldown without "
+        "calling the cloud."
     ),
     "collection_not_found": (
         "the Zotero collection key 404'd: pass the collection NAME (the "
@@ -176,6 +187,20 @@ def err_result(system: str, message: str, remedy: str,
             "log_tail": tail or []}
 
 
+def throttled_result(exc: RmapiThrottledError,
+                     data: dict[str, Any] | None = None,
+                     tail: list[str] | None = None,
+                     warnings: list[dict[str, Any]] | None = None
+                     ) -> dict[str, Any]:
+    """The distinct throttled result: system cloud, a wait-not-retry remedy,
+    and the retry time in data so the agent can tell the person."""
+    return err_result("cloud", str(exc), REMEDIES["rmapi_throttled"],
+                      data={**(data or {}),
+                            "throttled_until": exc.until_iso,
+                            "retry_after_s": exc.retry_after_s},
+                      tail=tail, warnings=warnings)
+
+
 def err_from_exception(exc: Exception, system: str, remedy: str,
                        data: dict[str, Any] | None = None,
                        tail: list[str] | None = None,
@@ -191,8 +216,13 @@ def err_from_exception(exc: Exception, system: str, remedy: str,
     "cloud" is a plausible-looking wrong cause, and the debugging rule that
     matters here is to name the system that is actually unreachable.
 
+    A throttle is re-attributed the same way, for the opposite reason: its
+    callers' generic remedies say "retry", which is the one thing it must not.
+
     Everything else passes through with the caller's own attribution.
     """
+    if isinstance(exc, RmapiThrottledError):
+        return throttled_result(exc, data=data, tail=tail, warnings=warnings)
     if isinstance(exc, RmapiNotFoundError):
         return err_result("rmapi", str(exc), REMEDIES["rmapi_not_found"],
                           data=data, tail=tail, warnings=warnings)
@@ -273,7 +303,11 @@ def classify(proc: subprocess.CompletedProcess,
     if looks_unauthenticated(combined):
         return {"system": "rmapi", "message": message,
                 "remedy": REMEDIES["not_authenticated"]}
-    if proc.returncode == 3 or "rm_state.lock" in combined:
+    if (proc.returncode == rm_config.EXIT_THROTTLED
+            or "rmapi throttled" in combined.lower()):
+        return {"system": "cloud", "message": message,
+                "remedy": REMEDIES["rmapi_throttled"]}
+    if proc.returncode == rm_config.EXIT_STATE_LOCKED or "rm_state.lock" in combined:
         return {"system": "config", "message": message,
                 "remedy": REMEDIES["state_locked"]}
     if "404" in combined and "collections/" in combined:

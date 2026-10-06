@@ -33,7 +33,8 @@ from typing import Any
 
 from . import config, device, render_profiles, roundtrip
 from .config import new_out_dir
-from .envelope import REMEDIES, RmapiAuthError, err_result, make_warning, ok_result
+from .envelope import (REMEDIES, RmapiAuthError, RmapiThrottledError,
+                       err_result, make_warning, ok_result, throttled_result)
 from .runner import run_script
 
 # A base64 PNG is ~1.37x the file size, and an analysis-profile page runs to a
@@ -56,6 +57,8 @@ def _fetch_and_extract(device_path: str, tool: str) -> tuple[Path, Path] | dict:
         bundle = device.get(device_path, out / "download")
     except RmapiAuthError as exc:
         return err_result("rmapi", str(exc), REMEDIES["not_authenticated"])
+    except RmapiThrottledError as exc:
+        return throttled_result(exc)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         return err_result(
             "cloud", f"could not fetch {device_path}: {exc}",

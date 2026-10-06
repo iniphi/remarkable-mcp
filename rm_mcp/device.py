@@ -16,7 +16,8 @@ from pathlib import Path
 
 from .config import RMAPI_BIN, rm_config
 from .envelope import (RmapiAuthError, RmapiNotFoundError,
-                       looks_unauthenticated, make_warning)
+                       RmapiThrottledError, looks_unauthenticated,
+                       make_warning)
 
 
 def _run(args: list[str], timeout: int = 60,
@@ -80,7 +81,7 @@ def canonical_child(parent: str, name: str,
     """
     try:
         entries = ls(parent, timeout=timeout)
-    except RmapiAuthError:
+    except (RmapiAuthError, RmapiThrottledError):
         raise
     except (RuntimeError, subprocess.TimeoutExpired):
         return name, []
@@ -238,16 +239,23 @@ def auth_probe(timeout: int = 30) -> dict[str, object]:
     """Non-raising reachability probe for rm_health.
 
     Returns {"authenticated": bool | None, "detail": str}; authenticated is
-    None when rmapi could not be executed at all.
+    None when rmapi could not be executed at all, or when the cloud is
+    throttling -- then "throttled_until" says when to ask again, and during an
+    active cooldown the probe never reaches the cloud.
     """
     try:
         proc = rm_config.run_rmapi("ls", "/", check=False,
                                    timeout=float(timeout))
+    except RmapiThrottledError as exc:
+        return {"authenticated": None, "detail": str(exc),
+                "throttled_until": exc.until_iso}
     except RmapiNotFoundError as exc:
         # run_rmapi types the missing binary since 2026-09-20; the bare
         # FileNotFoundError this used to catch no longer reaches here. The
         # detail now carries the remedy rather than restating the path the
         # caller can already see in rmapi_binary.
+        return {"authenticated": None, "detail": str(exc)}
+    except rm_config.RmapiBusyError as exc:
         return {"authenticated": None, "detail": str(exc)}
     except subprocess.TimeoutExpired:
         return {"authenticated": None, "detail": "rmapi ls / timed out"}

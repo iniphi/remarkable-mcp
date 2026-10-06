@@ -60,7 +60,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from rm_config import RM_ROOT, RMAPI_BIN, load_env, make_warning, run_rmapi
+from rm_config import (RM_ROOT, RMAPI_BIN, cli_main, load_env, make_warning,
+                       run_rmapi)
 
 load_env()
 
@@ -870,4 +871,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    cli_main(main)

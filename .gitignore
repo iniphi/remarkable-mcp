@@ -13,3 +13,7 @@ CREATION.md
 *.egg-info/
 build/
 dist/
+tools/.rmapi.lock
+tools/.rmapi.last
+tools/.rmapi_throttle.json
+tools/.rmapi_throttle.json.tmp

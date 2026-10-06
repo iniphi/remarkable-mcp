@@ -228,8 +228,9 @@ async def rm_health(write_probe: bool = False) -> dict:
             try:
                 device.ls(config.PROJECTS_DEVICE_ROOT, timeout=30)
                 projects_root_exists = True
-            except RmapiAuthError:
-                projects_root_exists = None
+            except (RmapiAuthError, config.rm_config.RmapiThrottledError,
+                    config.rm_config.RmapiBusyError):
+                projects_root_exists = None  # not asked, so not "missing"
             except RuntimeError:
                 projects_root_exists = False
 
@@ -248,6 +249,10 @@ async def rm_health(write_probe: bool = False) -> dict:
                         cleanup=config.destructive_allowed())
                 except RmapiAuthError as exc:
                     write = {"writable": False, "detail": str(exc)}
+                except config.rm_config.RmapiThrottledError as exc:
+                    # Unknown, not False: the write was never attempted.
+                    write = {"writable": None, "detail": str(exc),
+                             "throttled_until": exc.until_iso}
 
         return {
             "rmapi_binary": {
@@ -260,6 +265,9 @@ async def rm_health(write_probe: bool = False) -> dict:
                 "exists": bool(resolved),
             },
             "cloud": auth,
+            # The rmapi cooldown, read from its file: never a cloud call, so
+            # it answers even while the cloud is refusing us.
+            "throttle": config.rm_config.throttle_status(),
             # Only where the Zotero lane is installed (the desk). The public
             # build has no Zotero coupling, so it has nothing to report here.
             **({"zotero": zotero_lane.health_status()} if zotero_lane else {}),

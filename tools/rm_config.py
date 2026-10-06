@@ -47,7 +47,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, NoReturn
 
 try:
     import rm_state_remote
@@ -571,47 +571,20 @@ def state_lock(timeout: float = 60.0, poll: float = 0.25) -> Iterator[None]:
 
     Locks one byte of the sidecar STATE_LOCK_FILE (never the state file
     itself -- save_state's os.replace would invalidate a handle on it).
-    msvcrt.locking on Windows, fcntl.flock elsewhere. Raises StateLockTimeout
-    when another process holds the lock past `timeout` seconds.
+    msvcrt.locking on Windows, fcntl.flock elsewhere (via _exclusive_file_lock,
+    which rmapi_lock shares). Raises StateLockTimeout when another process
+    holds the lock past `timeout` seconds.
     """
-    STATE_LOCK_FILE.touch(exist_ok=True)
-    fh = open(STATE_LOCK_FILE, "r+b")
-    locked = False
-    try:
-        deadline = time.monotonic() + timeout
-        while True:
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    fh.seek(0)
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                locked = True
-                break
-            except OSError:
-                if time.monotonic() >= deadline:
-                    raise StateLockTimeout(
-                        f"another rm tool holds {STATE_LOCK_FILE.name} "
-                        f"(likely an rm_pull/rm_push in another window); "
-                        f"wait for it to finish and retry"
-                    ) from None
-                time.sleep(poll)
+    lock_file = STATE_LOCK_FILE
+
+    def _timed_out() -> Exception:
+        return StateLockTimeout(
+            f"another rm tool holds {lock_file.name} "
+            f"(likely an rm_pull/rm_push in another window); "
+            f"wait for it to finish and retry")
+
+    with _exclusive_file_lock(lock_file, timeout, poll, _timed_out):
         yield
-    finally:
-        if locked:
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    fh.seek(0)
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            except OSError:
-                pass  # handle close releases the lock regardless
-        fh.close()
 
 
 def update_state(mutator: Callable[[dict], None],
@@ -655,20 +628,13 @@ AUTH_HINTS: tuple[str, ...] = (
     "please login",
     "code from https://my.remarkable.com",
     "401",
+    # What rmapi prints under -ni (which run_rmapi always passes) when it has
+    # no device token: it aborts instead of asking for a one-time code.
+    "missing token, not asking",
 )
 
 # Signatures of transient cloud/network failures that are safe to retry.
-# Auth failures and not-found are never retried.
-#
-# The rate-limit hints matter more than they look. Every rmapi invocation is a
-# fresh process that exchanges the device token for a user token, so a sweep
-# that shells out per document (rm_diff stat-ing 279 files) hammers the token
-# endpoint and earns "failed to create user token from device token request
-# failed with status 429". That text matches no auth hint, so before these
-# entries existed a 429 was classified as a hard failure and never retried --
-# which is what let rm_diff mistake 163 live documents for deletions on
-# 2026-08-24. Kept specific ("status 429", not a bare "429") so a document
-# whose NAME contains the digits cannot trigger a spurious retry.
+# Auth failures, not-found and THROTTLING are never retried.
 TRANSIENT_HINTS: tuple[str, ...] = (
     "connection reset",
     "connection refused",
@@ -678,10 +644,63 @@ TRANSIENT_HINTS: tuple[str, ...] = (
     "503",
     "502",
     "tls handshake",
+)
+
+# Signatures of the reMarkable cloud rate-limiting this account. A throttle is
+# a HARD STOP, not a retry (to-do 3ec3d581, 2026-10-01), for a reason read off
+# the rmapi source at the pinned commit 74a8e2e rather than inferred:
+#
+#   - An rmapi process does NOT re-sync the whole tree on start. It keeps
+#     tree.cache and returns after one root-index request when the root hash is
+#     unchanged (api/sync15/tree.go, Mirror). It also reuses the cached user
+#     token (a 3-hour JWT); it does not exchange the device token every time.
+#     The comment that used to stand here said it did, and was wrong for this
+#     build.
+#   - But ANY failure while building that context -- a 429, a network blip, an
+#     expired token -- makes it re-mint the user token with no pause, up to
+#     three times (main.go, AUTH_RETRIES), and a throttled login endpoint then
+#     Fatal-exits with "failed to create user token from device token ...
+#     status 429" (api/auth.go). That is the error seen live.
+#
+# So retrying a 429 -- which this list did from 2026-08-24 -- multiplied the
+# token mints: up to 3 x (retries+1) per logical call. Now run_rmapi records a
+# cooldown (rmapi_throttle_file) and refuses every rmapi call, in every
+# process, until it expires.
+#
+# The 2026-08-24 lesson that put "status 429" in the retry list still holds,
+# and is kept by making a throttle RAISE rather than return: an unretried 429
+# that came back as a plain failure is what let rm_diff mistake 163 live
+# documents for deletions. Kept specific ("status 429", not a bare "429"), and
+# matched with the call's own path arguments removed, so a document whose NAME
+# carries the words cannot block the lane.
+THROTTLE_HINTS: tuple[str, ...] = (
     "status 429",
     "too many requests",
     "rate limit",
 )
+
+# CLI exit codes cli_main maps the two lane-wide conditions to. 3 predates
+# cli_main (the four CLIs that take state_lock); rm-mcp's envelope.classify
+# reads both.
+EXIT_STATE_LOCKED = 3
+EXIT_THROTTLED = 4
+
+# Bradley's ruling 2026-10-01: five minutes. Env RM_THROTTLE_COOLDOWN_S.
+DEFAULT_THROTTLE_COOLDOWN_S = 300.0
+# How long a call waits for another rm tool's rmapi call to finish. A single
+# call is bounded by its own timeout (300s for a get), so this covers a short
+# queue. Env RM_RMAPI_LOCK_TIMEOUT_S.
+DEFAULT_RMAPI_LOCK_TIMEOUT_S = 600.0
+# rmapi fans out up to 20 requests when the root hash has moved
+# (api/sync15/apictx.go). An explicit RMAPI_CONCURRENT in the environment wins.
+RMAPI_CONCURRENT_DEFAULT = "4"
+# Minimum gap, in seconds, between the end of one rmapi process and the start
+# of the next, across every rm tool. Serialising stops overlap; it does not
+# stop a burst. Measured live 2026-10-01: a whole-ledger sweep at ~0.5s per
+# call drew a 429 on the SYNC endpoint at the 36th call (~19s), while a
+# 12-call run at ~1.1s per call was clean. Two seconds is ~30 calls a minute.
+# Env RM_RMAPI_MIN_INTERVAL_S; 0 disables it.
+DEFAULT_RMAPI_MIN_INTERVAL_S = 2.0
 
 
 class RmapiError(RuntimeError):
@@ -714,6 +733,34 @@ class RmapiNotFoundError(RmapiError):
     """
 
 
+class RmapiThrottledError(RmapiError):
+    """The reMarkable cloud is rate-limiting this account (HTTP 429).
+
+    Raised whatever `check` says, like RmapiNotFoundError: a throttle is a
+    condition of the whole lane, never an answer about one document, so it must
+    not come back as a CompletedProcess a caller could read as "absent".
+    `until` is the epoch second the cooldown ends.
+    """
+
+    def __init__(self, message: str, until: float,
+                 proc: subprocess.CompletedProcess | None = None) -> None:
+        super().__init__(message, proc)
+        self.until = until
+
+    @property
+    def until_iso(self) -> str:
+        return _iso_utc(self.until)
+
+    @property
+    def retry_after_s(self) -> int:
+        return max(0, int(self.until - time.time()))
+
+
+class RmapiBusyError(RmapiError):
+    """Another rm tool held the rmapi lock for longer than this call would
+    wait. Nothing was sent to the cloud."""
+
+
 RMAPI_NOT_FOUND_REMEDY = (
     "the rmapi binary could not be found. Set RMAPI_BIN to its absolute path "
     "(in the environment or any .env this loader reads), or put it on PATH. "
@@ -735,6 +782,304 @@ def _looks_transient(text: str) -> bool:
     return any(hint in low for hint in TRANSIENT_HINTS)
 
 
+def looks_throttled(text: str) -> bool:
+    low = (text or "").lower()
+    return any(hint in low for hint in THROTTLE_HINTS)
+
+
+def _verb(args: tuple[str, ...]) -> str:
+    """The rmapi command: the first argument that is not a global flag
+    (`-json ls /x` has the verb "ls")."""
+    return next((a for a in args if not a.startswith("-")), "")
+
+
+def _without_path_args(text: str, args: tuple[str, ...]) -> str:
+    """`text` with the call's own path arguments blanked out.
+
+    rmapi echoes the path it was given in its errors, so a document named
+    "Rate Limit Theory" would otherwise arm a five-minute lane-wide cooldown on
+    a plain not-found. The verb and flags are kept: blanking "stat" would turn
+    "status 429" into "us 429" and hide a real throttle.
+    """
+    verb_seen = False
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        if not verb_seen:
+            verb_seen = True
+            continue
+        if len(arg) > 1:
+            text = text.replace(arg, " ")
+    return text
+
+
+# -- rmapi cooldown + serialisation (to-do 3ec3d581, 2026-10-01) -------------
+
+def _env_seconds(name: str, default: float) -> float:
+    """A non-negative seconds value from the environment, read at call time so
+    a .env loaded after import still applies. Garbage falls back to default."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _iso_utc(epoch: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def rmapi_throttle_file() -> Path:
+    """Where the cooldown lives. Shared by every rm tool on this machine (the
+    CLIs, rm_watch's drains and the rm-mcp server). Env RM_RMAPI_THROTTLE_FILE
+    overrides it; the test suite points it at a temp dir."""
+    override = os.environ.get("RM_RMAPI_THROTTLE_FILE")
+    return Path(override) if override else _TOOLS_DIR / ".rmapi_throttle.json"
+
+
+def rmapi_lock_file() -> Path:
+    """The file lock that serialises rmapi calls. Env RM_RMAPI_LOCK_FILE."""
+    override = os.environ.get("RM_RMAPI_LOCK_FILE")
+    return Path(override) if override else _TOOLS_DIR / ".rmapi.lock"
+
+
+def rmapi_last_call_file() -> Path:
+    """When the last rmapi process ended (epoch seconds, as text). Lives beside
+    the lock (`.rmapi.lock` -> `.rmapi.last`) and is only touched under it.
+    Not the lock file's own mtime: acquiring the lock touches that."""
+    return rmapi_lock_file().with_suffix(".last")
+
+
+def _pace() -> None:
+    """Sleep until RM_RMAPI_MIN_INTERVAL_S has passed since the last rmapi call
+    ended. Caller holds rmapi_lock. A missing or garbled stamp means no wait."""
+    interval = _env_seconds("RM_RMAPI_MIN_INTERVAL_S",
+                            DEFAULT_RMAPI_MIN_INTERVAL_S)
+    if interval <= 0:
+        return
+    try:
+        last = float(rmapi_last_call_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    wait = interval - (time.time() - last)
+    if 0 < wait <= interval:  # a stamp from the future is ignored, not obeyed
+        time.sleep(wait)
+
+
+def _stamp_last_call() -> None:
+    try:
+        rmapi_last_call_file().write_text(repr(time.time()), encoding="utf-8")
+    except OSError as exc:
+        print(f"[warn] could not stamp {rmapi_last_call_file()}: {exc}",
+              file=sys.stderr)
+
+
+def _read_throttle() -> dict[str, Any] | None:
+    """The recorded cooldown, or None.
+
+    Fails OPEN on a corrupt or unreadable file: a bad cooldown record must not
+    brick the lane, and the next real 429 rewrites it anyway.
+    """
+    try:
+        data = json.loads(rmapi_throttle_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("until"),
+                                                    (int, float)):
+        return None
+    return data
+
+
+def throttle_status(now: float | None = None) -> dict[str, Any]:
+    """Read-only view of the cooldown, for rm_health and humans. No cloud call."""
+    now = time.time() if now is None else now
+    data = _read_throttle()
+    if data is None or data["until"] <= now:
+        return {"throttled": False, "until": None, "remaining_s": 0,
+                "observed_at": None, "detail": None}
+    return {"throttled": True, "until": _iso_utc(data["until"]),
+            "remaining_s": int(data["until"] - now),
+            "observed_at": data.get("observed_at"),
+            "detail": data.get("detail")}
+
+
+def clear_throttle() -> None:
+    """Drop the cooldown (a human who knows the throttle has lifted)."""
+    rmapi_throttle_file().unlink(missing_ok=True)
+
+
+def _throttle_line(combined: str) -> str:
+    """The line of rmapi's output that names the throttle, else the last one."""
+    lines = [ln.strip() for ln in combined.splitlines() if ln.strip()]
+    hit = next((ln for ln in reversed(lines) if looks_throttled(ln)), None)
+    return (hit or (lines[-1] if lines else ""))[:300]
+
+
+def _arm_throttle(args: tuple[str, ...], combined: str) -> float:
+    """Record a cooldown and return the epoch second it ends."""
+    now = time.time()
+    until = now + _env_seconds("RM_THROTTLE_COOLDOWN_S",
+                               DEFAULT_THROTTLE_COOLDOWN_S)
+    record = {"until": until, "until_iso": _iso_utc(until),
+              "observed_at": _iso_utc(now),
+              "command": _verb(args),
+              "detail": _throttle_line(combined)}
+    path = rmapi_throttle_file()
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        # This caller still gets the raise; only later calls lose the memory.
+        print(f"[warn] could not record the rmapi cooldown at {path}: {exc}",
+              file=sys.stderr)
+    return until
+
+
+def _throttled_error(until: float, detail: str | None,
+                     proc: subprocess.CompletedProcess | None = None
+                     ) -> RmapiThrottledError:
+    remaining = max(0, int(until - time.time()))
+    local = time.strftime("%H:%M", time.localtime(until))
+    message = (f"rmapi throttled: the reMarkable cloud answered 429, so no rm "
+               f"tool will call it until {_iso_utc(until)} (local {local}, "
+               f"{remaining}s). Wait: a retry before then re-mints the login "
+               f"token and extends the throttle.")
+    if detail:
+        message += f" Last error: {detail}"
+    return RmapiThrottledError(message, until, proc)
+
+
+def _refuse_if_throttled() -> None:
+    data = _read_throttle()
+    if data is not None and data["until"] > time.time():
+        raise _throttled_error(data["until"], data.get("detail"))
+
+
+@contextmanager
+def _exclusive_file_lock(lock_file: Path, timeout: float, poll: float,
+                         on_timeout: Callable[[], Exception]
+                         ) -> Iterator[None]:
+    """Cross-process exclusive lock on one byte of `lock_file`.
+
+    msvcrt.locking on Windows, fcntl.flock elsewhere. Both conflict across
+    separate handles in the SAME process too, so this also serialises threads.
+    Raises on_timeout() when the lock is still held after `timeout` seconds.
+    """
+    lock_file.touch(exist_ok=True)
+    fh = open(lock_file, "r+b")
+    locked = False
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise on_timeout() from None
+                time.sleep(poll)
+        yield
+    finally:
+        if locked:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass  # handle close releases the lock regardless
+        fh.close()
+
+
+@contextmanager
+def rmapi_lock(timeout: float | None = None,
+               poll: float = 0.1) -> Iterator[None]:
+    """One rmapi process at a time, across threads and processes.
+
+    Two reasons, both from the rmapi source. Every process reads and rewrites
+    the same tree.cache with no locking of its own, so concurrent processes
+    race on it. And concurrent processes multiply the token mints a single
+    failure triggers. rm_diff's two-worker pool, rm_watch's drains and the
+    rm-mcp server all reach the cloud through here.
+    """
+    wait = (_env_seconds("RM_RMAPI_LOCK_TIMEOUT_S",
+                         DEFAULT_RMAPI_LOCK_TIMEOUT_S)
+            if timeout is None else timeout)
+    lock_file = rmapi_lock_file()
+
+    def _busy() -> Exception:
+        return RmapiBusyError(
+            f"another rm tool held {lock_file.name} for over {wait:.0f}s "
+            f"(likely a long drain in another window); nothing was sent to "
+            f"the cloud. Wait for it to finish and retry.")
+
+    with _exclusive_file_lock(lock_file, wait, poll, _busy):
+        yield
+
+
+def _rmapi_child_env() -> dict[str, str]:
+    env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
+    env.setdefault("RMAPI_CONCURRENT", RMAPI_CONCURRENT_DEFAULT)
+    return env
+
+
+def _spawn_rmapi(args: tuple[str, ...], cwd: str | Path | None,
+                 timeout: float) -> subprocess.CompletedProcess:
+    """One rmapi process, under the lock, behind the cooldown, paced.
+
+    The throttle is detected and recorded INSIDE the lock, so a call queued
+    behind the one that drew the 429 sees the cooldown and never spawns. The
+    cooldown is re-checked after pacing, since a pause is long enough for
+    another process to have recorded one.
+    """
+    _refuse_if_throttled()  # before queueing: no wait to be refused anyway
+    with rmapi_lock():
+        _refuse_if_throttled()
+        _pace()
+        _refuse_if_throttled()
+        try:
+            proc = subprocess.run(
+                [RMAPI_BIN, "-ni", *args], capture_output=True,
+                encoding="utf-8", errors="replace", timeout=timeout,
+                cwd=str(cwd) if cwd is not None else None,
+                stdin=subprocess.DEVNULL, env=_rmapi_child_env(),
+            )
+        except FileNotFoundError as exc:
+            # Never retried: a binary that is absent on attempt 1 is absent on
+            # attempt 3, and the hint lists cannot classify an exception that
+            # carries no stdout or stderr to match against. Nothing reached
+            # the cloud, so there is no call to stamp.
+            raise RmapiNotFoundError(
+                f"rmapi could not be executed as {RMAPI_BIN!r} "
+                f"(configured: {RMAPI_BIN_CONFIGURED!r}). "
+                f"{RMAPI_NOT_FOUND_REMEDY}"
+            ) from exc
+        except subprocess.TimeoutExpired:
+            _stamp_last_call()  # it was talking to the cloud until killed
+            raise
+        _stamp_last_call()
+        if proc.returncode != 0:
+            combined = f"{proc.stdout or ''}\n{proc.stderr or ''}"
+            if looks_throttled(_without_path_args(combined, args)):
+                until = _arm_throttle(args, combined)
+                raise _throttled_error(until, _throttle_line(combined), proc)
+        return proc
+
+
 def run_rmapi(*args: str, check: bool = True,
               cwd: str | Path | None = None,
               timeout: float = 180.0,
@@ -747,36 +1092,28 @@ def run_rmapi(*args: str, check: bool = True,
 
       - encoding='utf-8', errors='replace' -- device names with en-dashes
         survive a cp1252 console.
-      - stdin=DEVNULL -- an unpaired rmapi asking for a one-time code can
-        never hang the caller.
+      - stdin=DEVNULL and `-ni` -- an unpaired rmapi aborts ("missing token,
+        not asking", an AUTH_HINT) instead of waiting on a one-time code.
       - MSYS_NO_PATHCONV=1 in the child env -- Git Bash must not rewrite
         /device/paths into C:/ paths (previously only ambient via rm-mcp).
+      - RMAPI_CONCURRENT=4 in the child env unless already set.
+      - One rmapi process at a time (rmapi_lock); RmapiBusyError if another
+        rm tool holds it past RM_RMAPI_LOCK_TIMEOUT_S.
+      - At least RM_RMAPI_MIN_INTERVAL_S (default 2s) between the end of one
+        rmapi process and the start of the next, across every rm tool.
+      - Global flags go first: run_rmapi("-json", "ls", path).
+      - A 429 is a hard stop: RmapiThrottledError, whatever `check` says, and
+        every later call refuses without spawning until the cooldown ends.
       - Bounded retry (opt-in via retries=) ONLY on transient signatures or
-        TimeoutExpired; never on auth hints or not-found. Backoff is
-        exponential in retry_delay (delay, 2*delay, 4*delay, ...) so a
-        rate-limited call actually gets a chance to recover.
+        TimeoutExpired; never on throttle, auth hints or not-found. Backoff
+        is exponential in retry_delay (delay, 2*delay, 4*delay, ...).
       - check + rc!=0 raises RmapiAuthError on auth hints, else RmapiError.
     """
-    cmd = [RMAPI_BIN, *args]
-    env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
     attempts = max(0, retries) + 1
     proc: subprocess.CompletedProcess | None = None
     for attempt in range(1, attempts + 1):
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, encoding="utf-8", errors="replace",
-                timeout=timeout, cwd=str(cwd) if cwd is not None else None,
-                stdin=subprocess.DEVNULL, env=env,
-            )
-        except FileNotFoundError as exc:
-            # Never retried: a binary that is absent on attempt 1 is absent on
-            # attempt 3, and TRANSIENT_HINTS/AUTH_HINTS cannot classify an
-            # exception that carries no stdout or stderr to match against.
-            raise RmapiNotFoundError(
-                f"rmapi could not be executed as {RMAPI_BIN!r} "
-                f"(configured: {RMAPI_BIN_CONFIGURED!r}). "
-                f"{RMAPI_NOT_FOUND_REMEDY}"
-            ) from exc
+            proc = _spawn_rmapi(args, cwd, timeout)
         except subprocess.TimeoutExpired:
             if attempt < attempts:
                 time.sleep(retry_delay * (2 ** (attempt - 1)))
@@ -788,8 +1125,6 @@ def run_rmapi(*args: str, check: bool = True,
         if looks_unauthenticated(combined):
             break  # never retry auth failures
         if attempt < attempts and _looks_transient(combined):
-            # Exponential, not fixed: a rate limiter answers a prompt retry
-            # with another 429, so each attempt must wait longer than the last.
             time.sleep(retry_delay * (2 ** (attempt - 1)))
             continue
         break
@@ -805,6 +1140,24 @@ def run_rmapi(*args: str, check: bool = True,
             raise RmapiAuthError(message, proc)
         raise RmapiError(message, proc)
     return proc
+
+
+def cli_main(main: Callable[[], int | None]) -> NoReturn:
+    """Run an rm CLI's main() and exit, mapping the two lane-wide conditions
+    to their own exit codes so rm-mcp (envelope.classify) and rm_watch can
+    tell them from an ordinary failure: a held state lock (EXIT_STATE_LOCKED)
+    and a reMarkable cloud throttle (EXIT_THROTTLED). Each prints one line,
+    not a traceback.
+    """
+    try:
+        code = main()
+    except StateLockTimeout as exc:
+        print(f"[x] {exc}", file=sys.stderr)
+        sys.exit(EXIT_STATE_LOCKED)
+    except RmapiThrottledError as exc:
+        print(f"[x] {exc}", file=sys.stderr)
+        sys.exit(EXIT_THROTTLED)
+    sys.exit(code)
 
 
 # ── calibration + filename constants (single source of truth) ───────────────
@@ -833,7 +1186,8 @@ PDF_RM_SCALE = 3.16
 #     rm_make_pen_calibration.py), which stay A4 because PDF_RM_SCALE above
 #     was derived from that exact geometry and prior runs must stay comparable
 #   - rm_make_dossier.py, whose glyphs are hand-positioned against A4
-#     Helvetica metrics -- a re-layout, not a constant swap
+#     Helvetica metrics. Since 2026-09-26 a dossier is printed or published to
+#     Notion, never pushed, so A4 is its right page, not a device compromise
 RM_PAGE_W_PT: float = 468.0
 RM_PAGE_H_PT: float = 624.0
 

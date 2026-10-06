@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import Any
 
 from . import config, device, roundtrip
-from .envelope import (REMEDIES, RmapiAuthError, err_from_exception,
-                       err_result, ok_result)
+from .envelope import (REMEDIES, RmapiAuthError, RmapiThrottledError,
+                       err_from_exception, err_result, ok_result,
+                       throttled_result)
 
 # The roots rm-mcp manages. Everything else on the device (personal trees,
 # unrelated folders) needs the explicit allow_anywhere=True escape. Defined in
@@ -128,8 +129,18 @@ def delete_impl(device_path: str, dry_run: bool,
     if entry["type"] == "folder":
         try:
             children = device.ls(norm, timeout=30)
-        except (RuntimeError, subprocess.TimeoutExpired):
-            children = []
+        except RmapiThrottledError as exc:
+            return throttled_result(exc)
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            # Never fall through to "empty": until 2026-10-01 this set
+            # children = [] and planned -- and, for real, performed -- a
+            # delete of a folder whose contents nobody had been able to read.
+            return err_result(
+                "cloud",
+                f"{device_path}'s contents could not be listed, so it is not "
+                f"known to be empty: {exc}",
+                "rm_delete only removes a folder it has seen to be empty: "
+                "check the cloud with rm_health, then retry")
         if children:
             return err_result(
                 "config",
