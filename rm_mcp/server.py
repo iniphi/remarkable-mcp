@@ -34,8 +34,8 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from . import (__version__, authz, config, device, manage, pages, roundtrip,
-               runner, surface, wire)
+from . import (__version__, authz, config, device, manage, pages, pull_worker,
+               roundtrip, runner, surface, wire)
 from .envelope import (
     REMEDIES,
     RMAPI_NOT_FOUND_REMEDY,
@@ -424,7 +424,7 @@ async def rm_push_pdf(path: str | None = None, project: str | None = None,
 
     Args:
         path: Absolute path to a .pdf file ON THE SERVER.
-        project: Project code (NNN_name, e.g. "101_Overseer") -- pass explicitly.
+        project: Project code (NNN_name, e.g. "100_thesis") -- pass explicitly.
         title: Optional device filename (sanitised, max 80 chars).
         content_b64: The PDF's bytes as standard base64, for a remote caller.
             Capped at 11MB decoded.
@@ -762,6 +762,7 @@ async def rm_get_highlights(extracted_dir: str) -> dict:
 # manage.py to keep this file under the size ceiling.
 manage.register(mcp)
 pages.register(mcp)
+pull_worker.register(mcp)
 
 # Fail loudly now if the declared surface and the registered set disagree -- a
 # misspelling in surface.py would otherwise silently drop (or publish) a tool.

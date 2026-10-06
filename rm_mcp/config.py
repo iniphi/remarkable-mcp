@@ -265,7 +265,10 @@ _IS_NNN_PATTERN = _PROJECT_PATTERN.startswith(r"^\d{3}_")
 _PROJECT_SHAPE = ("NNN_name" if _IS_NNN_PATTERN
                   else "a folder name" if _PROJECT_PATTERN == ANY_FOLDER_PATTERN
                   else _PROJECT_PATTERN)
-_PROJECT_EXAMPLE = " (e.g. 101_Overseer)" if _IS_NNN_PATTERN else ""
+# Neutral on purpose: this string reaches a user's error message in the public
+# build, so it must not name one of the author's own projects.
+NNN_EXAMPLE = "100_thesis"
+_PROJECT_EXAMPLE = f" (e.g. {NNN_EXAMPLE})" if _IS_NNN_PATTERN else ""
 
 
 def resolve_project(project: str | None = None) -> str:

@@ -146,13 +146,17 @@ the client sets `CLAUDE_PROJECT_DIR`, never from the working directory.
 
 ## What it does
 
-18 tools, all on by default:
+21 tools, all on by default:
 
 - **Device.** `rm_health`, `rm_list`, `rm_diff` (what changed on the device
   since last look), `rm_ensure_project_folder`.
 - **Push.** `rm_create`, `rm_new_notebook`, `rm_push_content`, `rm_push_pdf`,
   `rm_push_file`, `rm_push_image`, `rm_push_dir`.
-- **Pull and read.** `rm_pull_project` (the loop), `rm_get_highlights`,
+- **Pull and read.** `rm_pull_project` (the loop), and for long documents its
+  asynchronous form -- `rm_pull_project_start` returns a job id at once, the
+  pages render one subprocess at a time, `rm_pull_project_status` reports
+  progress and `rm_pull_project_fetch` collects finished pages -- plus
+  `rm_get_highlights`,
   `rm_render`, `rm_page_image`, `rm_page_ink`.
 - **Manage.** `rm_move`, `rm_delete`. Both default to `dry_run=True` and
   return a plan; `rm_delete` never recurses. Both refuse paths outside the

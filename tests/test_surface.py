@@ -104,7 +104,9 @@ class TestDefaultFollowsTheBuild(unittest.TestCase):
         # lane it served); 18 on the public tree, where every workflow, vision
         # and AGPL tool lives in a private lane the build drops, so `full` and
         # `core` are the same set there.
-        expected = 25 if self.full_build else 18
+        # 28 / 21 since 2026-10-01: the asynchronous pull added three tools
+        # (rm_pull_project_start / _status / _fetch) to core, and so to full.
+        expected = 28 if self.full_build else 21
         self.assertEqual(len(registered("full")), expected)
 
     def test_explicit_surface_overrides_the_build_default(self):
@@ -183,6 +185,8 @@ class TestCoreIsSafeToPublish(unittest.TestCase):
         core = set(registered("core"))
         for tool in ("rm_push_file", "rm_push_content", "rm_new_notebook",
                      "rm_pull_project", "rm_get_highlights",
+                     "rm_pull_project_start", "rm_pull_project_status",
+                     "rm_pull_project_fetch",
                      "rm_diff", "rm_delete", "rm_move",
                      "rm_ensure_project_folder", "rm_health", "rm_list"):
             with self.subTest(tool=tool):

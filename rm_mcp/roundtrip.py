@@ -640,6 +640,29 @@ def render_doc(device_path: str | None, extracted: str | None,
                      log, warnings)
 
 
+def check_pull_options(backend: str | None, profile: str | None
+                       ) -> tuple[str, Any, dict[str, Any] | None]:
+    """Validate the backend and render-profile arguments of a project pull.
+
+    Shared by the synchronous pull_project_doc and the asynchronous job start
+    (pull_worker), so the two can never disagree about what a valid request is.
+    Returns (backend, render profile, error); error is None when both are valid.
+    """
+    from . import render_profiles
+
+    backend = backend or DEFAULT_BACKEND
+    if backend not in VISION_BACKENDS:
+        return backend, None, err_result(
+            "config", f"unknown backend {backend!r}",
+            f"use one of {', '.join(VISION_BACKENDS)}")
+    try:
+        rprofile = render_profiles.get_profile(profile or "analysis")
+    except ValueError as exc:
+        return backend, None, err_result(
+            "config", str(exc), "use profile=analysis or profile=publication")
+    return backend, rprofile, None
+
+
 def pull_project_doc(name: str, project: str | None,
                      flatten: bool, highlights: bool, interpret: bool,
                      backend: str | None, pages: str | None,
@@ -653,18 +676,9 @@ def pull_project_doc(name: str, project: str | None,
     -- the model-input render); render_profiles is the single source of truth,
     so this and rm_pull_notebook render identically.
     """
-    from . import render_profiles
-
-    backend = backend or DEFAULT_BACKEND
-    if backend not in VISION_BACKENDS:
-        return err_result("config",
-                          f"unknown backend {backend!r}",
-                          f"use one of {', '.join(VISION_BACKENDS)}")
-    try:
-        rprofile = render_profiles.get_profile(profile or "analysis")
-    except ValueError as exc:
-        return err_result("config", str(exc),
-                          "use profile=analysis or profile=publication")
+    backend, rprofile, option_error = check_pull_options(backend, profile)
+    if option_error is not None:
+        return option_error
     warnings: list[dict[str, Any]] = []
     try:
         if dry_run:

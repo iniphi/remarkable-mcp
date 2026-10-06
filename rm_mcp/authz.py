@@ -90,6 +90,11 @@ TOOL_SCOPES: dict[str, int] = {
     "rm_interpret_page": READ,
     "rm_pull": READ,
     "rm_pull_project": READ,
+    # The asynchronous pull: same scope as rm_pull_project, because it does the
+    # same thing (writes only to the server's own session dir) in three calls.
+    "rm_pull_project_start": READ,
+    "rm_pull_project_status": READ,
+    "rm_pull_project_fetch": READ,
     "rm_pull_notebook": READ,
     "rm_capture_todos": READ,
     # write ------------------------------------------------------------------
@@ -122,6 +127,10 @@ HEAVY_TOOLS: frozenset[str] = frozenset({
     "rm_get_highlights",
     "rm_pull",
     "rm_pull_project",
+    # Only the START is heavy: it launches the render. status and fetch are
+    # polling calls and must not be charged to the tight heavy bucket, or a
+    # caller waiting on a job would rate-limit itself.
+    "rm_pull_project_start",
     "rm_pull_notebook",
     "rm_push_content",
     "rm_create",

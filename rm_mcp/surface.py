@@ -4,9 +4,9 @@ One codebase, three surfaces. Before this existed, the "6-tool public ship"
 to-do and the 24-tool repo contradicted each other for weeks -- because they
 were answering two different questions and neither was written down as code:
 
-    full    (25)  the desk. Everything, including the Zotero/Notion workflow
+    full    (28)  the desk. Everything, including the Zotero/Notion workflow
                   lane and the AGPL-linked render tools. The default.
-    core    (18)  the public repo's device-infrastructure surface: push, pull,
+    core    (21)  the public repo's device-infrastructure surface: push, pull,
                   diff, move, delete, create, inspect. No Zotero, no Notion, no
                   vision spend, and nothing that reaches an AGPL script.
     remote   (7)  the hosted Flavour-2 wire surface (SHIP-FLAVOUR-2.md): what a
@@ -14,7 +14,10 @@ were answering two different questions and neither was written down as code:
                   radius, and on the fact that tools returning container-local
                   paths are a functional dead end for a remote caller.
 
-    (Counts as of 2026-09-20, when rm_create joined core and remote. The core
+    (28 / 21 as of 2026-10-01, when the asynchronous pull -- rm_pull_project_
+    start / _status / _fetch -- joined core beside rm_pull_project; remote is
+    unchanged. The 25 / 18 below it were the 2026-09-20 counts, when rm_create
+    joined core and remote. The core
     figure read 15 from before the 2026-08-27 render port added two tools and
     was never corrected -- these numbers are prose, and test_surface.py is what
     actually holds the line.)
@@ -84,6 +87,9 @@ CORE_TOOLS = frozenset({
     "rm_new_notebook",
     "rm_push_dir",
     "rm_pull_project",
+    "rm_pull_project_start",
+    "rm_pull_project_status",
+    "rm_pull_project_fetch",
     "rm_get_highlights",
     "rm_move",
     "rm_delete",

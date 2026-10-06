@@ -243,8 +243,12 @@ class TestProjectPatternOverride(unittest.TestCase):
         self.assertIsNotNone(err)
         self.assertNotIn("NNN_name", err,
                          "a custom pattern must not be described as NNN_name")
-        self.assertNotIn("101_Overseer", err,
-                         "a custom pattern must not carry the iniphi example")
+        self.assertNotIn(_config.NNN_EXAMPLE, err,
+                         "a custom pattern must not carry the NNN_name example")
+
+    def test_nnn_example_names_no_private_project(self):
+        """The example reaches a user's error message; it must be neutral."""
+        self.assertEqual(_config.NNN_EXAMPLE, "100_thesis")
 
     def test_path_separators_refused_whatever_the_pattern(self):
         """Separator rejection precedes the pattern, so even ^.*$ cannot escape."""
