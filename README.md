@@ -108,6 +108,8 @@ Four ways to put something on the tablet:
 | `rm_push_content(mode="native")` | Typed text you can edit on the device with the keyboard, from markdown-ish input |
 | `rm_push_pdf`, `rm_push_file`, `rm_push_image` | A PDF, an EPUB, or an image fitted onto a device-sized page |
 
+To make your favourite template and pen the default, override the template named `default` in `tools/rm_templates.local.json`; every `rm_new_notebook` call without a template then uses it. Caveat: it is unverified whether a freshly uploaded notebook honours the pen before the first stroke. At worst, tap the pen once in the toolbar.
+
 ## Making documents that fit: `CREATION.md`
 
 Ask any agent for "a PDF for my reMarkable" and you get A4, because A4 is what

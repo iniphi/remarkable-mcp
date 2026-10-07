@@ -1040,7 +1040,8 @@ def _rmapi_child_env() -> dict[str, str]:
 
 
 def _spawn_rmapi(args: tuple[str, ...], cwd: str | Path | None,
-                 timeout: float) -> subprocess.CompletedProcess:
+                 timeout: float,
+                 lock_timeout: float | None = None) -> subprocess.CompletedProcess:
     """One rmapi process, under the lock, behind the cooldown, paced.
 
     The throttle is detected and recorded INSIDE the lock, so a call queued
@@ -1049,7 +1050,7 @@ def _spawn_rmapi(args: tuple[str, ...], cwd: str | Path | None,
     another process to have recorded one.
     """
     _refuse_if_throttled()  # before queueing: no wait to be refused anyway
-    with rmapi_lock():
+    with rmapi_lock(timeout=lock_timeout):
         _refuse_if_throttled()
         _pace()
         _refuse_if_throttled()
@@ -1086,8 +1087,14 @@ def run_rmapi(*args: str, check: bool = True,
               cwd: str | Path | None = None,
               timeout: float = 180.0,
               retries: int = 0,
-              retry_delay: float = 2.0) -> subprocess.CompletedProcess:
+              retry_delay: float = 2.0,
+              lock_timeout: float | None = None) -> subprocess.CompletedProcess:
     """Run rmapi with arguments; capture stdout/stderr.
+
+    lock_timeout: seconds to wait for another rm tool's rmapi call. None (the
+    default) keeps RM_RMAPI_LOCK_TIMEOUT_S / DEFAULT_RMAPI_LOCK_TIMEOUT_S, so
+    drains and CLIs behave as before; interactive callers (rm-mcp push tools)
+    pass a shorter bound so they return before their client gives up.
 
     The one shared invocation path for every rm_*.py CLI and the rm-mcp
     server (replaces six divergent per-file _rmapi copies). Guarantees:
@@ -1115,7 +1122,7 @@ def run_rmapi(*args: str, check: bool = True,
     proc: subprocess.CompletedProcess | None = None
     for attempt in range(1, attempts + 1):
         try:
-            proc = _spawn_rmapi(args, cwd, timeout)
+            proc = _spawn_rmapi(args, cwd, timeout, lock_timeout)
         except subprocess.TimeoutExpired:
             if attempt < attempts:
                 time.sleep(retry_delay * (2 ** (attempt - 1)))

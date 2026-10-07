@@ -21,14 +21,18 @@ from .envelope import (RmapiAuthError, RmapiNotFoundError,
 
 
 def _run(args: list[str], timeout: int = 60,
-         cwd: str | None = None) -> subprocess.CompletedProcess:
+         cwd: str | None = None,
+         lock_timeout: float | None = None) -> subprocess.CompletedProcess:
     """Run one rmapi command. Raises RmapiAuthError on a lost pairing.
 
     check=False: callers branch on returncode; only a lost pairing raises
     (the server surfaces it as the not_authenticated remedy, never re-auths).
+    lock_timeout bounds the wait for another rm tool (None = substrate default;
+    RmapiBusyError past it).
     """
     proc = rm_config.run_rmapi(*args, check=False, cwd=cwd,
-                               timeout=float(timeout))
+                               timeout=float(timeout),
+                               lock_timeout=lock_timeout)
     if proc.returncode != 0 and looks_unauthenticated(
             f"{proc.stdout}\n{proc.stderr}"):
         raise RmapiAuthError(proc.stderr.strip() or proc.stdout.strip()
@@ -36,12 +40,14 @@ def _run(args: list[str], timeout: int = 60,
     return proc
 
 
-def ls(device_path: str, timeout: int = 60) -> list[dict[str, str]]:
+def ls(device_path: str, timeout: int = 60,
+       lock_timeout: float | None = None) -> list[dict[str, str]]:
     """List a device folder. Entries: {"name", "type": "folder"|"doc"}.
 
     Raises RuntimeError when the path does not exist / cannot be listed.
     """
-    proc = _run(["ls", device_path], timeout=timeout)
+    proc = _run(["ls", device_path], timeout=timeout,
+                lock_timeout=lock_timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"rmapi ls {device_path} failed: "
                            f"{proc.stderr.strip() or proc.stdout.strip()}")
@@ -58,7 +64,9 @@ def ls(device_path: str, timeout: int = 60) -> list[dict[str, str]]:
 
 def canonical_child(parent: str, name: str,
                     timeout: int = 60,
-                    want_type: str | None = None) -> tuple[str, list[dict]]:
+                    want_type: str | None = None,
+                    lock_timeout: float | None = None
+                    ) -> tuple[str, list[dict]]:
     """Device-casing canonicalization for one child segment (V2-8).
 
     Lists `parent` and returns (canonical_name, warnings). An exact match
@@ -80,9 +88,15 @@ def canonical_child(parent: str, name: str,
     callers.
     """
     try:
-        entries = ls(parent, timeout=timeout)
+        entries = ls(parent, timeout=timeout, lock_timeout=lock_timeout)
     except (RmapiAuthError, RmapiThrottledError):
         raise
+    except rm_config.RmapiBusyError:
+        # A bounded caller (lock_timeout set) must hear that the lane is busy;
+        # an unbounded one keeps the original fall-through.
+        if lock_timeout is not None:
+            raise
+        return name, []
     except (RuntimeError, subprocess.TimeoutExpired):
         return name, []
     if any(e["name"] == name for e in entries):
@@ -125,13 +139,15 @@ def canonical_child(parent: str, name: str,
     return name, []
 
 
-def mkdir_p(device_path: str, timeout: int = 30) -> None:
+def mkdir_p(device_path: str, timeout: int = 30,
+            lock_timeout: float | None = None) -> None:
     """Ensure each segment of device_path exists. Idempotent."""
     parts = [p for p in device_path.strip("/").split("/") if p]
     cur = ""
     for part in parts:
         cur = f"{cur}/{part}"
-        proc = _run(["mkdir", cur], timeout=timeout)
+        proc = _run(["mkdir", cur], timeout=timeout,
+                    lock_timeout=lock_timeout)
         if proc.returncode != 0:
             stderr = proc.stderr.lower()
             if "exists" in stderr or "already" in stderr:
@@ -185,14 +201,16 @@ def write_probe(parent: str, *, cleanup: bool, timeout: int = 30) -> dict:
     return result
 
 
-def put(local: Path, device_dir: str, timeout: int = 120) -> None:
+def put(local: Path, device_dir: str, timeout: int = 120,
+        lock_timeout: float | None = None) -> None:
     """Push a local file into a device folder.
 
     Runs from the file's parent so rmapi sees the basename only (device
     filename = local stem).
     """
     proc = _run(["put", local.name, device_dir],
-                timeout=timeout, cwd=str(local.parent))
+                timeout=timeout, cwd=str(local.parent),
+                lock_timeout=lock_timeout)
     if proc.returncode != 0:
         raise RuntimeError(f"rmapi put {local.name} -> {device_dir} failed: "
                            f"{proc.stderr.strip()}")

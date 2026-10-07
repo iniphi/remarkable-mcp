@@ -612,7 +612,8 @@ async def rm_new_notebook(title: str, project: str | None = None,
 
     Templates: "default", "lined" (P Lines small paper) and "plain" ship;
     tools/rm_templates.local.json adds
-    or overrides by name. Pen and margin values are what the device itself
+    or overrides by name. Override the template named "default" to change
+    what a call without a template produces. Pen and margin values are what the device itself
     writes, but whether a fresh upload honours them before the first stroke
     is unverified -- worst case, one tap on the toolbar.
 

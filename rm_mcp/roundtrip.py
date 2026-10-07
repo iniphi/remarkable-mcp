@@ -147,15 +147,19 @@ def materialised_local(content_b64: str, filename: str,
     return local, None
 
 
-def canonical_project_dir(project: str | None) -> tuple[str, list[dict[str, Any]]]:
+def canonical_project_dir(project: str | None,
+                          lock_timeout: float | None = None
+                          ) -> tuple[str, list[dict[str, Any]]]:
     """Resolve + device-case-canonicalize /Projects/<code> (V2-8).
 
     Raises ValueError (unresolvable project) and RmapiAuthError; other
-    transport failures fall through with the requested casing.
+    transport failures fall through with the requested casing. With
+    lock_timeout set, RmapiBusyError also propagates.
     """
     code = config.resolve_project(project)
+    kwargs = {} if lock_timeout is None else {"lock_timeout": lock_timeout}
     canon, warnings = device.canonical_child(
-        config.PROJECTS_DEVICE_ROOT, code, want_type="folder")
+        config.PROJECTS_DEVICE_ROOT, code, want_type="folder", **kwargs)
     return config.join_root(config.PROJECTS_DEVICE_ROOT, canon), warnings
 
 
@@ -173,17 +177,38 @@ def push_local_file(local: Path, project: str | None,
         stem = config.safe_filename_stem(title)
         staged = config.new_out_dir("push_staging") / f"{stem}{local.suffix.lower()}"
         shutil.copy2(local, staged)
+    bound = config.push_lock_timeout_s()
+    busy_remedy = ("wait for the other rm tool (a drain or pull in another "
+                   "window) to finish, then retry")
     try:
-        device_dir, warnings = canonical_project_dir(project)
+        device_dir, warnings = canonical_project_dir(project, lock_timeout=bound)
     except ValueError as exc:
         return err_result("config", str(exc), "pass project=<NNN_name>")
     except RmapiAuthError as exc:
         return err_result("rmapi", str(exc), REMEDIES["not_authenticated"])
+    except rm_config.RmapiBusyError as exc:
+        return err_result(
+            "rmapi",
+            f"another rm tool is using the reMarkable connection (it held the "
+            f"lock for over {bound:.0f}s). Nothing was uploaded and no folder "
+            f"was created.", busy_remedy)
+    stage = "mkdir"
     try:
-        device.mkdir_p(device_dir)
-        device.put(staged, device_dir)
+        stage = "mkdir"
+        device.mkdir_p(device_dir, lock_timeout=bound)
+        stage = "put"
+        device.put(staged, device_dir, lock_timeout=bound)
     except RmapiAuthError as exc:
         return err_result("rmapi", str(exc), REMEDIES["not_authenticated"])
+    except rm_config.RmapiBusyError as exc:
+        sent = ("Nothing was uploaded; the project folder was created or "
+                "already exists." if stage == "put" else
+                "Nothing was uploaded; some folders on the way may already "
+                "exist.")
+        return err_result(
+            "rmapi",
+            f"another rm tool is using the reMarkable connection (it held the "
+            f"lock for over {bound:.0f}s). {sent}", busy_remedy)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         return err_from_exception(exc, "cloud",
                                  "check device/cloud reachability with "

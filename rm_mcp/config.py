@@ -134,6 +134,34 @@ PROJECTS_DEVICE_ROOT = _norm_root(
     os.environ.get("RM_MCP_PROJECTS_ROOT", "/"))
 
 
+# How long a PUSH tool waits, per rmapi call, for another rm tool to release the
+# shared rmapi lock. The substrate default is 600s per call; a push makes
+# several calls in sequence, which can pass Claude Code's 1800s MCP idle
+# timeout with no progress (rm_new_notebook once never returned although the
+# upload landed). Env RM_MCP_PUSH_LOCK_TIMEOUT_S.
+#
+# Worst case for rm_new_notebook (all figures seconds), another tool holding the
+# lock throughout is the FAST case (the first call fails after 120). The slow
+# case is a lock freed just before each bound: local build 600 (runner default),
+# then ls (60 call + 120 lock + 2 pace = 182), up to 4 mkdir segments
+# (4 x (30 + 120 + 2) = 608) and put (120 + 120 + 2 = 242):
+# 600 + 182 + 608 + 242 = 1632, under the 1800 limit. Typical path has 1-2
+# segments (about 1330).
+DEFAULT_PUSH_LOCK_TIMEOUT_S = 120.0
+
+
+def push_lock_timeout_s() -> float:
+    """Per-call rmapi lock bound for push tools, read at call time."""
+    raw = os.environ.get("RM_MCP_PUSH_LOCK_TIMEOUT_S")
+    if not raw:
+        return DEFAULT_PUSH_LOCK_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_PUSH_LOCK_TIMEOUT_S
+    return value if value >= 0 else DEFAULT_PUSH_LOCK_TIMEOUT_S
+
+
 def join_root(root: str, name: str) -> str:
     """Join one segment under a device root without producing "//name"."""
     return f"{root.rstrip('/')}/{name.strip('/')}"
