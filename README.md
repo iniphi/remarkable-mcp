@@ -202,13 +202,12 @@ Worth knowing:
 - **Reading handwriting costs nothing.** The page images go to the agent that
   called, which reads them itself. There is no per-page vision spend and no
   key to set.
-- **Handwriting under typed text is drawn higher than it sits.** On the
-  tablet, ink written below or between typed paragraphs is anchored to the
-  text, and its position is stored relative to that line; the page images
-  place it from the top of the page instead. Under a typed title, as
-  `rm_new_notebook` leaves you, the writing comes back whole and readable,
-  only raised. Ink written between typed paragraphs can overlap. The typed
-  text itself comes back in `typed_text`, not drawn in the image.
+- **Handwriting placed against typed text is approximate.** Ink anchored to
+  typed text is positioned from an estimate of the text's layout, at paragraph
+  granularity (mid-paragraph ink snaps to its paragraph's start), and the line
+  heights await calibration against a device. An anchor that cannot be placed
+  is reported as a warning, not hidden. The typed text itself comes back in
+  `typed_text`, not drawn in the image.
 - **Highlights need a text layer.** Free-drawn highlighter strokes are
   intersected with the PDF's own text; snap-to-text highlights carry their
   text already. Neither needs OCR.

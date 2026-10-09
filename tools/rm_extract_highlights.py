@@ -163,6 +163,41 @@ def page_words(page, page_h: float) -> list[tuple[float, float, float, float, st
         textpage.close()
 
 
+def _strip_ws(text: str) -> str:
+    return "".join(text.split())
+
+
+def respace_glyph_text(device_text: str,
+                       rects_pdf: list[list[float]],
+                       words: list[tuple[float, float, float, float, str, int]],
+                       ) -> tuple[str, str]:
+    """Rebuild a glyph highlight's spacing from the PDF's own words.
+
+    A snap-to-text GlyphRange's `text` loses the space at a wrapped line break
+    ("signsor"). The PDF words whose centres fall inside the highlight's rects,
+    joined in reading order with single spaces, restore it. The candidate is
+    ADOPTED only when it equals the device text once all whitespace is removed
+    (exact, case-sensitive, ligature-normalised on both sides); otherwise the
+    device text is returned unchanged. Characters are never invented or dropped.
+
+    Returns (text, text_source) with text_source "pdf_words" or "device".
+    """
+    if not device_text or not rects_pdf or not words:
+        return device_text, "device"
+    picked = sorted(
+        (order, w)
+        for wx0, wy0, wx1, wy1, w, order in words
+        if any(r[0] <= (wx0 + wx1) / 2 <= r[2] and r[1] <= (wy0 + wy1) / 2 <= r[3]
+               for r in rects_pdf)
+    )
+    if not picked:
+        return device_text, "device"
+    candidate = " ".join(w for _, w in picked)
+    if _strip_ws(normalise_ligatures(candidate)) != _strip_ws(normalise_ligatures(device_text)):
+        return device_text, "device"
+    return candidate, "pdf_words"
+
+
 def _extract_glyph_items_for_page(blocks) -> list[dict[str, Any]]:
     """Pull snap-to-text highlights (SceneGlyphItemBlock -> GlyphRange) from a
     .rm block list. Each GlyphRange already carries the literal highlighted
@@ -297,7 +332,7 @@ def extract_highlights(extracted_dir: Path,
                     px1, py1 = rm_to_pdf(x_rm + w_rm, y_rm + h_rm, pdf_w, pdf_h)
                     pdf_rects.append([round(px0, 1), round(py0, 1),
                                       round(px1, 1), round(py1, 1)])
-                results.append({
+                rec = {
                     "pdf_page": page_idx + 1,
                     "source": "glyph",
                     "text": gh["text"],
@@ -305,7 +340,13 @@ def extract_highlights(extracted_dir: Path,
                     "bbox_pdf": pdf_rects[0] if pdf_rects else None,
                     "rects_pdf": pdf_rects,
                     "n_points": None,
-                })
+                }
+                if words:  # only pages with a text layer; others stay unchanged
+                    text, src = respace_glyph_text(gh["text"], pdf_rects, words)
+                    rec["text"] = text
+                    rec["text_device"] = gh["text"]
+                    rec["text_source"] = src
+                results.append(rec)
 
             # Pass 2: free-drawn highlighter polylines (text recovered via geometry)
             for b in blocks:
@@ -447,7 +488,7 @@ def _merge_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any]:
     rects = [r for m in cluster for r in _record_rects(m)]
     parts = [(m.get("text") or "").strip() for m in cluster]
     n_points = [m.get("n_points") for m in cluster if m.get("n_points") is not None]
-    return {
+    merged = {
         "pdf_page": head.get("pdf_page"),
         "source": head.get("source"),
         "text": normalise_ligatures(" ".join(p for p in parts if p)),
@@ -457,6 +498,13 @@ def _merge_cluster(cluster: list[dict[str, Any]]) -> dict[str, Any]:
         "n_points": sum(n_points) if n_points else None,
         "n_merged": len(cluster),
     }
+    sources = {m.get("text_source") for m in cluster}
+    if sources != {None}:  # additive: only glyph records that went through respacing
+        merged["text_source"] = (sources.pop() if len(sources) == 1 else "mixed")
+        merged["text_device"] = normalise_ligatures(" ".join(
+            p for p in ((m.get("text_device", m.get("text")) or "").strip()
+                        for m in cluster) if p))
+    return merged
 
 
 def main() -> int:

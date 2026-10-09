@@ -15,10 +15,10 @@ requires-python = ">=3.10"
 # and is imported only by scripts outside the shipped manifest, which is what
 # lets this package be MIT. Adding it here would relicense the project.
 dependencies = [
-    "mcp[cli]>=1.6.0,<2",   # the server framework. <2: mcp 2.x removed mcp.server.fastmcp
-                            # (FastMCP -> MCPServer), which server.py imports; found by a
-                            # clean-clone install on 2026-09-09 that resolved to 2.2.0 and
-                            # failed at the very first --check.
+    "mcp[cli]>=2.3.0,<3",   # the server framework. >=2.3: mcp 2.x renamed
+                            # mcp.server.fastmcp.FastMCP to mcp.server.mcpserver.MCPServer
+                            # (no host/port args; takes version= directly), which server.py
+                            # now imports. 1.x no longer works. <3 stays as the next-major guard.
     "rmscene>=0.7.0",       # .rm v6 scene parsing -- strokes, highlights (MIT)
     "pypdfium2>=4.30.0",    # PDF rasterisation (BSD-3/Apache-2.0)
     "pillow>=10.0.0",       # page image composition (MIT-CMU)

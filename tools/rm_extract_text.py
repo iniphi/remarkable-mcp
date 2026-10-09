@@ -76,6 +76,10 @@ def extract_typed_text(extracted_dir: Path,
             except Exception as e:
                 print(f"  [warn] typed-text parse failed on page {page_idx + 1}: {e}",
                       file=sys.stderr)
+                if diag is not None:
+                    # Additive: lets a caller tell "no typing" from "typing we
+                    # could not read" (an unreadable item is not an absent one).
+                    diag.setdefault("typed_parse_failures", []).append(page_idx + 1)
                 continue
             for para in doc.contents:
                 text = str(para).rstrip("\n")

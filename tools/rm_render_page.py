@@ -24,12 +24,15 @@ import argparse
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 import rmscene
 from PIL import Image, ImageChops, ImageDraw
 from rmscene.scene_items import Pen, PenColor
+
+from rm_text_layout import anchor_y, layout_text
 
 
 # reMarkable 2 native device resolution (portrait)
@@ -198,17 +201,23 @@ def detect_stroke_merge(
     return {"has_artifact": severe > 0, "severe_count": severe, "max_jump": max_jump}
 
 
-def stroke_bbox(blocks) -> tuple[float, float, float, float] | None:
-    """Return (xmin, xmax, ymin, ymax) in rmscene coords; None if no strokes."""
+def stroke_bbox(blocks, offsets: dict | None = None
+                ) -> tuple[float, float, float, float] | None:
+    """Return (xmin, xmax, ymin, ymax) in rmscene coords; None if no strokes.
+
+    offsets ({group node_id: (dx, dy)}, from resolve_anchor_offsets) translates
+    each stroke by its parent group's anchor offset, so the canvas is sized for
+    ink where it will be DRAWN. None (the default) is the raw bbox."""
     xs: list[float] = []
     ys: list[float] = []
     for b in blocks:
         line = getattr(b, "item", None)
         if not (line and getattr(line, "value", None)):
             continue
+        dx, dy = (offsets or {}).get(getattr(b, "parent_id", None), (0.0, 0.0))
         for p in getattr(line.value, "points", []) or []:
-            xs.append(p.x)
-            ys.append(p.y)
+            xs.append(p.x + dx)
+            ys.append(p.y + dy)
     if not xs:
         return None
     return min(xs), max(xs), min(ys), max(ys)
@@ -516,6 +525,119 @@ def build_layer_map(blocks: list) -> dict:
     return layers
 
 
+@dataclass(frozen=True)
+class AnchorPlan:
+    """Result of anchor resolution for one page.
+
+    offsets: {group node_id: (dx, dy)} in rm units, for resolved groups and the
+      groups nested under them. placed / unresolved count GROUPS that carry an
+      anchor; an unresolved one is drawn unmoved (the old behaviour) and counted
+      so the caller can say so. notes: human-readable reasons."""
+    offsets: dict
+    placed: int = 0
+    unresolved: int = 0
+    notes: tuple[str, ...] = ()
+
+
+# Anchor type observed on every anchored group of the one device file this was
+# read from. EMPIRICAL: rmscene does not document anchor_type. Anything else is
+# treated as unresolved rather than guessed at.
+KNOWN_ANCHOR_TYPE = 2
+_MAX_GROUP_DEPTH = 64
+
+
+def _lww(x):
+    """Unwrap an rmscene LwwValue; pass bare values through."""
+    return getattr(x, "value", x)
+
+
+def _own_anchor_offset(group, layout) -> tuple[tuple[float, float] | None, str]:
+    """(dx, dy) one group's own anchor resolves to, or (None, reason)."""
+    if layout is None:
+        return None, "anchored ink on a page with no typed text"
+    atype = _lww(group.anchor_type) if group.anchor_type is not None else None
+    if atype is not None and atype != KNOWN_ANCHOR_TYPE:
+        return None, f"anchor_type {atype} is not understood"
+    dy = anchor_y(layout, _lww(group.anchor_id))
+    if dy is None:
+        return None, f"anchor id {_lww(group.anchor_id)} does not resolve"
+    ox = _lww(group.anchor_origin_x) if group.anchor_origin_x is not None else 0.0
+    return (float(ox or 0.0), dy), ""
+
+
+def resolve_anchor_offsets(blocks: list) -> AnchorPlan:
+    """Work out where text-anchored ink really sits.
+
+    Ink written under or between typed text is stored in a group whose strokes
+    are relative to an anchor in that text; drawn from the page top (the old
+    behaviour) it comes out raised by the typed block's height. Each anchored
+    group is translated by (anchor_origin_x, anchor y), the y estimated by
+    rm_text_layout (end-of-text marker -> bottom of the typed block; a real
+    character -> the START of its paragraph, since a mid-paragraph line needs
+    device font metrics; see that module for how approximate this is).
+
+    Pure and a no-op for pages without anchored groups. Offsets are computed in
+    a pass of their own over TreeNodeBlock groups, composing nested anchors
+    through SceneTreeBlock parent links."""
+    layout = None
+    for b in blocks:
+        if type(b).__name__ == "RootTextBlock":
+            layout = layout_text(b.value)
+            break
+    groups: dict = {}
+    parents: dict = {}
+    for b in blocks:
+        kind = type(b).__name__
+        if kind == "TreeNodeBlock" and getattr(b, "group", None) is not None:
+            groups[b.group.node_id] = b.group
+        elif kind == "SceneTreeBlock":
+            parents[b.tree_id] = b.parent_id
+    own: dict = {}
+    placed = unresolved = 0
+    notes: list[str] = []
+    for node, group in groups.items():
+        if group.anchor_id is None:
+            continue
+        off, reason = _own_anchor_offset(group, layout)
+        if off is None:
+            unresolved += 1
+            notes.append(f"group {node}: {reason}")
+        else:
+            placed += 1
+            own[node] = off
+    offsets: dict = {}
+    nested = False
+    for node in groups:
+        chain = []
+        cur, depth = node, 0
+        while cur is not None and depth < _MAX_GROUP_DEPTH:
+            if cur in own:
+                chain.append(own[cur])
+            cur = parents.get(cur)
+            depth += 1
+        if not chain:
+            continue
+        nested = nested or len(chain) > 1
+        offsets[node] = (sum(c[0] for c in chain), sum(c[1] for c in chain))
+    if nested:
+        notes.append("nested anchored groups: offsets composed by addition "
+                     "(unverified against a device file)")
+    return AnchorPlan(offsets, placed, unresolved, tuple(notes))
+
+
+def _anchor_tag(plan: AnchorPlan) -> str:
+    """Per-page output suffix. Empty for a page with no anchored groups, so the
+    line is byte-identical to the pre-anchor one; an unresolved anchor adds a
+    greppable ANCHOR-UNRESOLVED n marker (the MCP layer turns it into a
+    warning), never a silent drawn-at-the-top."""
+    if not (plan.placed or plan.unresolved):
+        return ""
+    tag = f"  [anchors placed={plan.placed} unresolved={plan.unresolved}]"
+    if plan.unresolved:
+        tag += f"  [ANCHOR-UNRESOLVED {plan.unresolved}]"
+    return tag
+
+
 def stroke_layer_label(block, layer_map: dict) -> str:
     """Return the layer label for one SceneLineItemBlock; ROOT_LAYER_LABEL if unknown."""
     parent_id = getattr(block, "parent_id", None)
@@ -547,6 +669,7 @@ def overlay_strokes(
     layer_filter: set[str] | None = None,
     color_by_layer: bool = False,
     pressure_width: bool = False,
+    offsets: dict | None = None,
 ) -> int:
     """Draw rmscene strokes onto canvas. Stroke (sx, sy) maps to canvas:
         cx = sx / rm_per_canvas_x + canvas_x_for_rm_zero + page_x
@@ -566,7 +689,12 @@ def overlay_strokes(
       the firmware-level stroke-merge connectors — a pen-lift reposition appears
       as a large spatial jump whose pressure is lower, so per-segment widths
       thin the spurious connector away. Mirrors rm_flatten.draw_strokes_on_page.
-      Use for MV/model-input renders; leave False for publication output."""
+      Use for MV/model-input renders; leave False for publication output.
+    offsets ({group node_id: (dx, dy)}, from resolve_anchor_offsets) moves
+      text-anchored ink to its anchor. It is added in rmscene units BEFORE the
+      canvas mapping, so it is correct at any rm_per_canvas. None = strokes
+      drawn at their raw coordinates (the pre-anchor behaviour). Glyph
+      (snap-to-text highlight) rectangles are not moved."""
     layer_map = build_layer_map(blocks) if (layer_filter is not None or color_by_layer) else {}
     layer_color_idx: dict[str, int] = {}  # stable label -> palette index
     glyph_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
@@ -640,11 +768,8 @@ def overlay_strokes(
         if layer_filter is not None and layer_label not in layer_filter:
             continue
 
-        coords = [
-            (p.x / rm_per_canvas_x + canvas_x_for_rm_zero + page_x,
-             p.y / rm_per_canvas_y + canvas_y_for_rm_zero + page_y)
-            for p in pts
-        ]
+        adx, ady = (offsets or {}).get(getattr(b, "parent_id", None), (0.0, 0.0))
+        coords = [_rm_to_canvas(p.x + adx, p.y + ady) for p in pts]
         if len(coords) < 2:
             cx, cy = coords[0]
             coords = [(cx - 1, cy - 1), (cx + 1, cy + 1)]
@@ -863,7 +988,8 @@ def main() -> int:
         blocks = parse_rm_blocks(rm_path) if rm_path else []
         merge = (detect_stroke_merge(blocks, args.merge_jump_threshold, args.merge_pressure_min)
                  if blocks else {"has_artifact": False, "severe_count": 0, "max_jump": 0.0})
-        sb = stroke_bbox(blocks) if blocks else None
+        anchors = resolve_anchor_offsets(blocks) if blocks else AnchorPlan({})
+        sb = stroke_bbox(blocks, anchors.offsets) if blocks else None
 
         # Compute rmscene -> canvas transform per page.
         if has_pdf and idx < len(pdf):
@@ -919,6 +1045,7 @@ def main() -> int:
                 layer_filter=layer_filter,
                 color_by_layer=color_by_layer,
                 pressure_width=args.pressure_width,
+                offsets=anchors.offsets,
             )
             strokes_small = strokes_big.resize(
                 (canvas.width, canvas.height), Image.Resampling.LANCZOS
@@ -934,6 +1061,7 @@ def main() -> int:
                 layer_filter=layer_filter,
                 color_by_layer=color_by_layer,
                 pressure_width=args.pressure_width,
+                offsets=anchors.offsets,
             )
 
         if args.crop:
@@ -952,7 +1080,10 @@ def main() -> int:
         print(f"  page {idx + 1:>3} -> {out_path.name}  "
               f"({canvas.width}x{canvas.height}, "
               f"rm/canvas={rm_per_canvas_x:.3f}, "
-              f"{n_strokes} strokes, {size_kb} kB){artifact_tag}")
+              f"{n_strokes} strokes, {size_kb} kB){artifact_tag}"
+              f"{_anchor_tag(anchors)}")
+        for note in anchors.notes:
+            print(f"    anchor note: {note}")
         rendered += 1
 
     print(f"\nrendered {rendered} page(s) into {out_dir}")

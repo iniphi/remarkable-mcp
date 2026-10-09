@@ -260,6 +260,11 @@ def auth_probe(timeout: int = 30) -> dict[str, object]:
     None when rmapi could not be executed at all, or when the cloud is
     throttling -- then "throttled_until" says when to ask again, and during an
     active cooldown the probe never reaches the cloud.
+
+    Results also carry "state" (additive): ok / unauthenticated when
+    authenticated is True / False; cold when the probe timed out (a cold
+    Cloud Run instance is still syncing the rmapi tree, ~113 s); busy when
+    the rmapi lock is held. cold and busy mean "ask again", never "re-pair".
     """
     try:
         proc = rm_config.run_rmapi("ls", "/", check=False,
@@ -274,14 +279,18 @@ def auth_probe(timeout: int = 30) -> dict[str, object]:
         # caller can already see in rmapi_binary.
         return {"authenticated": None, "detail": str(exc)}
     except rm_config.RmapiBusyError as exc:
-        return {"authenticated": None, "detail": str(exc)}
+        return {"authenticated": None, "state": "busy",
+                "detail": f"rmapi busy (lock held): {exc}; retry in a few "
+                          f"seconds"}
     except subprocess.TimeoutExpired:
-        return {"authenticated": None, "detail": "rmapi ls / timed out"}
+        return {"authenticated": None, "state": "cold",
+                "detail": "rmapi ls / timed out: cold instance, rmapi tree "
+                          "sync still running; retry in about 2 minutes"}
     if proc.returncode == 0:
-        return {"authenticated": True, "detail": "ok"}
+        return {"authenticated": True, "state": "ok", "detail": "ok"}
     combined = f"{proc.stdout}\n{proc.stderr}"
     if looks_unauthenticated(combined):
-        return {"authenticated": False,
+        return {"authenticated": False, "state": "unauthenticated",
                 "detail": (proc.stderr.strip() or proc.stdout.strip())[:300]}
     return {"authenticated": None,
             "detail": (proc.stderr.strip() or proc.stdout.strip())[:300]}

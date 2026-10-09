@@ -1,4 +1,4 @@
-"""rm -- FastMCP server for the reMarkable-2 integration.
+"""rm -- MCPServer server for the reMarkable-2 integration.
 
 24 tools: thin device ops + the cross-project push/pull lane (Zotero-free,
 incl. one-step content render+push via rm_push_content) + device management
@@ -11,8 +11,15 @@ managed roots and the project-folder pattern all come from config.py, which
 reads them from the environment. Never hardcode a device path here -- see
 config.PROJECTS_DEVICE_ROOT / config.MANAGED_ROOTS, both reported by rm_health.
 
-House pattern: paper-search-mcp. Import path MUST be mcp.server.fastmcp --
-the standalone `fastmcp` package (also installed) has an incompatible API.
+House pattern: paper-search-mcp. Import path MUST be mcp.server.mcpserver (mcp 2.x; the
+1.x name was mcp.server.fastmcp) -- the standalone `fastmcp` package (also
+installed) has an incompatible API.
+
+Network-lane env: RM_MCP_TRANSPORT (stdio | streamable-http), RM_MCP_HOST,
+PORT / RM_MCP_PORT, RM_MCP_AUTH_HEADER, RM_MCP_STATELESS (default on: no
+Mcp-Session-Id, so a Cloud Run scale-to-zero cannot strand a client with
+"session not found"; set 0/false to restore server-side sessions). The scope,
+allowlist and rate-limit variables are documented in authz.py / wire.py.
 
 Invariants: Notion never inside the MCP (tools return manifests; the calling
 agent routes); calibration constants frozen; auth surfaced, never re-paired
@@ -32,7 +39,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from . import (__version__, authz, config, device, manage, pages, pull_worker,
                roundtrip, runner, surface, wire)
@@ -73,21 +80,17 @@ _TRANSPORT = os.environ.get("RM_MCP_TRANSPORT", "stdio")
 _HOST = os.environ.get("RM_MCP_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("PORT", os.environ.get("RM_MCP_PORT", "8000")))
 
-_server = FastMCP("rm", host=_HOST, port=_PORT)
 
-# Report OUR version in the initialize handshake, not the SDK's.
-#
-# FastMCP takes no `version` argument (checked against mcp 1.30.0), and when
-# the inner server's version is None the SDK substitutes its own -- so a client
-# connecting to this server was told "rm v1.30.0", which is the mcp package's
-# version, tells a user nothing about rm-mcp, and silently changes whenever the
-# SDK is upgraded. The handshake is how a client identifies what it is talking
-# to, so it should say 1.0.0.
-#
-# `_mcp_server` is private, and this is the only route in this SDK version;
-# create_initialization_options() reads the attribute set here. If FastMCP ever
-# accepts a version directly, pass it there and delete this.
-_server._mcp_server.version = __version__
+def stateless_http() -> bool:
+    """RM_MCP_STATELESS: stateless streamable-http, default ON ("0"/"false"/"no"/"off" disables)."""
+    return os.environ.get("RM_MCP_STATELESS", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+# MCPServer takes the version directly, so the initialize handshake reports
+# rm-mcp's version rather than the SDK's. subscriptions=False: no resources
+# are registered, so subscriptions/listen must not be served.
+_server = MCPServer("rm", version=__version__, subscriptions=False)
 
 # Registration passes through the surface gate, so RM_MCP_SURFACE decides which
 # of the registered tools exist on this deployment. Unset = full = the desk, unchanged.
@@ -796,7 +799,9 @@ def main() -> None:
         # door on it is not a thing to discover from traffic.
         authz.validate_startup()
         header_name = os.environ.get("RM_MCP_AUTH_HEADER", "x-api-key")
-        app = wire.harden(mcp.streamable_http_app(), header_name=header_name)
+        app = wire.harden(
+            mcp.streamable_http_app(host=_HOST, stateless_http=stateless_http()),
+            header_name=header_name)
         import uvicorn
         uvicorn.run(app, host=_HOST, port=_PORT)
     else:

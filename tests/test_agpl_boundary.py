@@ -64,13 +64,14 @@ SHIPPED_TOOLS = {
     "rm_reading_ledger.py",
     "rm_render_content.py",
     "rm_render_page.py",
+    "rm_text_layout.py",
 }
 # rm_state_remote.py was in this set from 56f84bb until 2026-09-20 and
 # was never in rm_build_public.MANIFEST -- one half of a lockstep both files
 # claim to keep and nothing enforced. It kept THIS suite green while the
 # public tree it describes could not import at all, because rm_config's
 # import of it was hard. The import is guarded now and the cloud lane stays
-# unshipped, so the right set is the 9 the build actually copies.
+# unshipped, so the right set is the 10 the build actually copies.
 # test_manifest_matches_the_build_script (below) is what stops the two
 # drifting again.
 
@@ -204,7 +205,7 @@ class TestShippedManifestIsClosed(unittest.TestCase):
         self.assertEqual(
             SHIPPED_TOOLS, MANIFEST_NAMES,
             "SHIPPED_TOOLS and rm_build_public.MANIFEST disagree. They describe "
-            "the same 9 files -- the ones the build copies into the public "
+            "the same 10 files -- the ones the build copies into the public "
             "tree -- so a file added to one must be added to the other, or "
             "this suite tests a tree the build does not produce.")
 

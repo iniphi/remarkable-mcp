@@ -59,6 +59,16 @@ _RMAPI_BUILD_HINT = (
 
 _DRIVE_RE = re.compile(r"^/?[A-Za-z]:")
 
+# Probe states that mean "no answer yet", not "not paired". Re-pairing is the
+# wrong remedy for these, so the walk reports them and stops there.
+_NOT_A_PAIRING_STATES = ("cold", "busy")
+_NOT_A_PAIRING_MESSAGES = {
+    "cold": ("the device tree is still syncing (cold instance); retry in about "
+             "2 minutes. Pairing is not in question."),
+    "busy": ("another rmapi call is running; retry shortly. Pairing is not in "
+             "question."),
+}
+
 _WINDOWS_PATH_REFUSAL = (
     "[x] {value!r} looks like a Windows path, not a device folder. Git Bash "
     "rewrites arguments that start with '/'. Re-run with MSYS_NO_PATHCONV=1 in "
@@ -152,23 +162,29 @@ that says where things go.
 
 # -- the walk -----------------------------------------------------------------
 
-def _rmapi_status(rmapi: str) -> tuple[str, bool | None, list[str]]:
-    """(resolved binary or '', authenticated, top-level folder names)."""
+def _rmapi_status(rmapi: str) -> tuple[str, bool | None, list[str], str | None]:
+    """(resolved binary or '', authenticated, top-level folder names, probe state).
+
+    The probe state is the additive "state" key from device.auth_probe
+    (ok / unauthenticated / cold / busy), or None when the probe carries none.
+    """
     from shutil import which
     resolved = rmapi if Path(rmapi).is_file() else (which(rmapi) or "")
     if not resolved:
-        return "", None, []
+        return "", None, [], None
     os.environ["RMAPI_BIN"] = resolved
     config.rm_config.RMAPI_BIN = resolved  # type: ignore[attr-defined]
     device.RMAPI_BIN = resolved            # type: ignore[attr-defined]
     probe = device.auth_probe()
+    state = probe.get("state")
     if not probe.get("authenticated"):
-        return resolved, probe.get("authenticated"), []
+        return resolved, probe.get("authenticated"), [], state
     try:
         entries = device.ls("/", timeout=60)
     except Exception:  # listing is informational; pairing is what matters
-        return resolved, True, []
-    return resolved, True, sorted(e["name"] for e in entries if e.get("type") == "folder")
+        return resolved, True, [], state
+    return (resolved, True,
+            sorted(e["name"] for e in entries if e.get("type") == "folder"), state)
 
 
 def _pair_interactively(rmapi: str, yes: bool) -> None:
@@ -236,16 +252,21 @@ def run(argv: list[str] | None = None) -> int:
         _say(f"[ok] Python {sys.version.split()[0]} at {sys.executable}, dependencies present")
 
     # 2. rmapi + pairing.
-    rmapi, authed, folders = _rmapi_status(args.rmapi)
+    rmapi, authed, folders, state = _rmapi_status(args.rmapi)
     if not rmapi:
         _say("[!] " + _RMAPI_BUILD_HINT.replace("\n", "\n    "))
     elif authed:
         _say(f"[ok] rmapi at {rmapi}, paired; {len(folders)} top-level folder(s) on the device")
+    elif state in _NOT_A_PAIRING_STATES:
+        # Cold or busy: the probe never reached an answer, so the pairing is
+        # not in question. Say so and do not offer to re-pair.
+        _say(f"[!] rmapi at {rmapi} did not answer in time. "
+             + _NOT_A_PAIRING_MESSAGES[state])
     else:
         _say(f"[!] rmapi at {rmapi} but the cloud did not answer as paired")
         if not args.no_pair:
             _pair_interactively(rmapi, yes)
-            rmapi, authed, folders = _rmapi_status(rmapi)
+            rmapi, authed, folders, state = _rmapi_status(rmapi)
             _say("[ok] paired" if authed else "[!] still not paired; pair and re-run")
 
     # 3. Roots.

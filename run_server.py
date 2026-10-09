@@ -31,10 +31,11 @@ def _fail(message: str) -> None:
 
 def _load_server():
     try:
-        import mcp.server.fastmcp  # noqa: F401  (the SDK FastMCP, not standalone fastmcp)
+        import mcp.server.mcpserver  # noqa: F401  (the SDK MCPServer, mcp 2.x)
     except ImportError as exc:
         _fail(f"mcp SDK not importable under {sys.executable}: {exc}. "
-              f"Install with: {sys.executable} -m pip install 'mcp[cli]>=1.6.0'")
+              f"Install with: {sys.executable} -m pip install 'mcp[cli]>=2.3.0,<3'. "
+              f"The desk runs rm-mcp from rm-mcp/.venv.")
     try:
         from rm_mcp import server
     except Exception as exc:

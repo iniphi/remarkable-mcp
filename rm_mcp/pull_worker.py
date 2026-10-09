@@ -143,6 +143,9 @@ class ResidencyProbe:
 class RmapiBackend:
     """Device fetch + substrate scripts. Tests replace this whole class."""
 
+    def __init__(self) -> None:
+        self.render_stdout: dict[int, str] = {}
+
     def fetch(self, spec: PullSpec, work_dir: Path
               ) -> tuple[Path, str, list[dict[str, Any]]]:
         """Download and extract the bundle. Returns (extracted, device_path, warnings)."""
@@ -202,6 +205,9 @@ class RmapiBackend:
             raise JobError("cloud", f"page {page} render timed out after "
                            f"{exc.timeout}s", REMEDIES["timeout"], page) from exc
         pngs = sorted(out_dir.glob("*.png")) if out_dir.is_dir() else []
+        # Kept per page so _run can total the renderer's ANCHOR-UNRESOLVED
+        # markers with roundtrip's own parser (one writer per page key).
+        self.render_stdout[page] = proc.stdout or ""
         if proc.returncode != 0:
             raise JobError("config", f"render failed: "
                            f"{(proc.stderr or '').strip()[:400]}",
@@ -417,7 +423,19 @@ def _run(store: jobs.JobStore, job_id: str, backend: Any,
             doc_warnings.append(make_warning(
                 "step_failed", f"{spec.name}: interpret failed -- {status}",
                 data={"step": "interpret"}))
-    store.finish(job_id, document=document, warnings=warnings + doc_warnings)
+    store.finish(job_id, document=document,
+                 warnings=warnings + doc_warnings + _anchor_warnings(backend))
+
+
+def _anchor_warnings(backend: Any) -> list[dict[str, Any]]:
+    """One anchor_unresolved warning for the whole job, none when nothing is.
+
+    The count is parsed by roundtrip.anchor_warnings, the same parser the
+    synchronous render tools use; a backend that records no render output
+    (the test fakes) simply contributes nothing."""
+    outputs = getattr(backend, "render_stdout", None) or {}
+    joined = "\n".join(outputs[p] for p in sorted(outputs))
+    return roundtrip.anchor_warnings(joined)
 
 
 def _with_page(exc: JobError, page: int) -> JobError:
@@ -574,7 +592,7 @@ def pull_fetch(job_id: str, pages: str | None = None) -> dict[str, Any]:
 
 
 def register(mcp) -> None:
-    """Attach the three async-pull tools to the server's FastMCP instance."""
+    """Attach the three async-pull tools to the server's MCPServer instance."""
 
     @mcp.tool()
     async def rm_pull_project_start(

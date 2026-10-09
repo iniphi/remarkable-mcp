@@ -20,6 +20,8 @@ Known warning codes:
                            ink affected; possible_data_loss=False (V2-1)
     mtime_only_touch       rm_diff: mtime moved but page did not (sync touch)
     zero_ink               document has no ink strokes (not an error, V2-7)
+    anchor_unresolved      text-anchored ink could not be placed against the
+                           typed text and was drawn at its raw position
     collection_name_resolved  rm_push_reading resolved a name to a key (V2-2)
     project_case_matched   project folder matched case-insensitively (V2-8)
     project_notebook_collision  a folder+notebook share a name case-insensitively

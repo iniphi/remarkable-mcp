@@ -9,6 +9,7 @@ that re-running does not clobber a hand-edited file.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -33,7 +34,7 @@ class InitCase(unittest.TestCase):
             mock.patch.object(init_cli, "env_path", lambda: self.env),
             mock.patch.object(init_cli, "routing_path", lambda: self.routing),
             mock.patch.object(init_cli, "_rmapi_status",
-                              lambda rmapi: ("C:/bin/rmapi.exe", True, ["Notes", "Thesis"])),
+                              lambda rmapi: ("C:/bin/rmapi.exe", True, ["Notes", "Thesis"], "ok")),
             mock.patch.object(init_cli.config, "RM_MCP_DIR", self.tmp),
         ]
         for p in patches:
@@ -96,14 +97,85 @@ class TestNonInteractive(InitCase):
 
     def test_unpaired_rmapi_is_reported_not_hidden(self):
         with mock.patch.object(init_cli, "_rmapi_status",
-                               lambda rmapi: ("C:/bin/rmapi.exe", False, [])):
+                               lambda rmapi: ("C:/bin/rmapi.exe", False, [], "unauthenticated")):
             out = self.run_init("--no-pair")
         self.assertIn("not answer as paired", out)
 
     def test_missing_rmapi_prints_the_build_hint(self):
-        with mock.patch.object(init_cli, "_rmapi_status", lambda rmapi: ("", None, [])):
+        with mock.patch.object(init_cli, "_rmapi_status", lambda rmapi: ("", None, [], None)):
             out = self.run_init()
         self.assertIn("go install github.com/ddvk/rmapi", out)
+
+
+class TestProbeState(InitCase):
+    """A cold or busy probe is not a lapsed pairing: never offer to re-pair."""
+
+    def run_with_state(self, authed, state, *argv):
+        pair = mock.Mock()
+        with mock.patch.object(init_cli, "_rmapi_status",
+                               lambda rmapi: ("C:/bin/rmapi.exe", authed, [], state)), \
+                mock.patch.object(init_cli, "_pair_interactively", pair):
+            out = self.run_init(*argv)
+        return out, pair
+
+    def test_cold_says_warming_and_does_not_offer_pairing(self):
+        out, pair = self.run_with_state(None, "cold")
+        pair.assert_not_called()
+        self.assertIn("did not answer in time", out)
+        self.assertIn("cold", out)
+        self.assertIn("about 2 minutes", out)
+        self.assertNotIn("Run `rmapi` once", out)
+        self.assertNotIn("not answer as paired", out)
+
+    def test_busy_says_retry_and_does_not_offer_pairing(self):
+        out, pair = self.run_with_state(None, "busy")
+        pair.assert_not_called()
+        self.assertIn("did not answer in time", out)
+        self.assertIn("another rmapi call is running", out)
+        self.assertIn("retry shortly", out)
+        self.assertNotIn("Run `rmapi` once", out)
+        self.assertNotIn("not answer as paired", out)
+
+    def test_unauthenticated_still_offers_pairing(self):
+        out, pair = self.run_with_state(False, "unauthenticated")
+        pair.assert_called_once()
+        self.assertIn("not answer as paired", out)
+
+    def test_no_state_key_keeps_the_old_pairing_path(self):
+        out, pair = self.run_with_state(None, None)
+        pair.assert_called_once()
+        self.assertIn("not answer as paired", out)
+
+
+class TestRmapiStatusState(unittest.TestCase):
+    """The real _rmapi_status passes the probe's state through to the caller."""
+
+    def probe_state(self, probe_result):
+        from rm_mcp import device as device_mod
+        # sys.executable is a real file, so the real _rmapi_status resolves it
+        # and reaches the (mocked) probe without touching the device.
+        with mock.patch.object(device_mod, "auth_probe", lambda: probe_result), \
+                mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(init_cli.config.rm_config, "RMAPI_BIN", "", create=True), \
+                mock.patch.object(device_mod, "RMAPI_BIN", "", create=True):
+            return init_cli._rmapi_status(sys.executable)
+
+    def test_cold_probe_state_is_passed_through(self):
+        resolved, authed, folders, state = self.probe_state(
+            {"authenticated": None, "state": "cold", "detail": "timed out"})
+        self.assertIsNone(authed)
+        self.assertEqual(state, "cold")
+
+    def test_busy_probe_state_is_passed_through(self):
+        _, authed, _, state = self.probe_state(
+            {"authenticated": None, "state": "busy", "detail": "lock held"})
+        self.assertIsNone(authed)
+        self.assertEqual(state, "busy")
+
+    def test_no_state_key_gives_none(self):
+        _, authed, _, state = self.probe_state({"authenticated": None, "detail": "x"})
+        self.assertIsNone(authed)
+        self.assertIsNone(state)
 
 
 class TestWindowsPathRefused(InitCase):

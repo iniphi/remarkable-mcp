@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import zipfile
@@ -571,6 +572,26 @@ def _interpret_cmd(png_dir: Path, backend: str,
     return "rm_interpret_gemini.py", args
 
 
+_ANCHOR_UNRESOLVED_RE = re.compile(r"ANCHOR-UNRESOLVED (\d+)")
+
+
+def anchor_warnings(render_stdout: str) -> list[dict[str, Any]]:
+    """Turn the renderer's ANCHOR-UNRESOLVED markers into one warning.
+
+    rm_render_page prints the marker on any page where text-anchored ink could
+    not be placed and was drawn at its raw (page-top) position instead. An empty
+    list means every anchor resolved, or there were none."""
+    total = sum(int(n) for n in _ANCHOR_UNRESOLVED_RE.findall(render_stdout or ""))
+    if not total:
+        return []
+    return [make_warning(
+        "anchor_unresolved",
+        f"{total} text-anchored ink group(s) could not be placed against the "
+        f"typed text and are drawn at their raw position, typically higher than "
+        f"they sit on the device",
+        possible_data_loss=True, data={"unresolved": total})]
+
+
 def render_doc(device_path: str | None, extracted: str | None,
                profile_name: str | None, pages: str | None,
                dry_run: bool, transparent: bool | None = None) -> dict[str, Any]:
@@ -657,6 +678,7 @@ def render_doc(device_path: str | None, extracted: str | None,
     # crop-to-ink is now native to the renderer (--crop in render_flags), so the
     # produced PNGs are already cropped for a crop_to_ink profile.
     cropped = [str(p) for p in pngs] if profile.crop_to_ink else []
+    warnings.extend(anchor_warnings(proc.stdout))
 
     return ok_result({**plan,
                       "pngs": [str(p) for p in pngs],

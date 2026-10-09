@@ -1,6 +1,6 @@
 """Device management tools: rm_move, rm_delete, rm_push_dir (V2-3, V2-4).
 
-Registered onto the server's FastMCP instance via register(mcp) so server.py
+Registered onto the server's MCPServer instance via register(mcp) so server.py
 stays under the file-size ceiling. The sync implementations are module-level
 functions (testable offline with mocked device transports); the registered
 tools are thin async wrappers.
@@ -220,7 +220,7 @@ def push_dir_impl(dir_path: str, project: str | None, glob: str,
 
 
 def register(mcp) -> None:
-    """Attach the management tools to the server's FastMCP instance."""
+    """Attach the management tools to the server's MCPServer instance."""
 
     @mcp.tool()
     async def rm_move(src: str, dest: str, dry_run: bool = True,

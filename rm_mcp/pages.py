@@ -68,7 +68,7 @@ def _fetch_and_extract(device_path: str, tool: str) -> tuple[Path, Path] | dict:
 
 
 def register(mcp) -> None:
-    """Attach the page-level tools to the server's FastMCP instance."""
+    """Attach the page-level tools to the server's MCPServer instance."""
 
     @mcp.tool()
     async def rm_page_ink(device_path: str) -> dict:
@@ -208,7 +208,7 @@ def register(mcp) -> None:
                 "images": images,
                 "rendered": len(images),
                 "total_bytes": total,
-            })
+            }, warnings=roundtrip.anchor_warnings(proc.stdout))
 
         try:
             return await asyncio.to_thread(work)

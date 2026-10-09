@@ -12,7 +12,7 @@ The obvious design is: stash the caller's scope in a contextvar in the
 middleware, read it inside the tool. That is WRONG here, and the way it is
 wrong is silent.
 
-FastMCP's streamable-http transport does not run tool handlers in the task
+MCPServer's streamable-http transport does not run tool handlers in the task
 that served the HTTP request. StreamableHTTPSessionManager owns a task group
 created in the app's lifespan; the first request of a session calls
 `task_group.start(run_server)`, and every LATER request for that session is
@@ -142,6 +142,32 @@ HEAVY_TOOLS: frozenset[str] = frozenset({
 # more than the lowest scope -- a read token must be able to complete a
 # handshake or it cannot read anything either.
 _NON_TOOL_METHOD_SCOPE = READ
+
+# Explicit method-scope rows (mcp 2.x). Every row is READ, and the table exists
+# so that the admission is a stated decision rather than a fall-through.
+#   server/discover, subscriptions/listen: 2.x connection metadata.
+#   resources/*, prompts/*, completion/complete, logging/setLevel: rm-mcp
+#   registers none of these, so the server answers method-not-found. They are
+#   admitted at READ ON PURPOSE: clients such as the claude.ai connector may
+#   probe them on connect, and a 401/403 there would break the connector where
+#   a method-not-found does not. tools/call is NOT in this table; it is
+#   name-checked against TOOL_SCOPES below and never loosened here.
+METHOD_SCOPES: dict[str, int] = {
+    "initialize": READ,
+    "ping": READ,
+    "server/discover": READ,
+    "subscriptions/listen": READ,
+    "tools/list": READ,
+    "resources/list": READ,
+    "resources/templates/list": READ,
+    "resources/read": READ,
+    "resources/subscribe": READ,
+    "resources/unsubscribe": READ,
+    "prompts/list": READ,
+    "prompts/get": READ,
+    "completion/complete": READ,
+    "logging/setLevel": READ,
+}
 
 # Matches config.destructive_allowed()'s set exactly. A wider set here would
 # mean RM_MCP_ALLOW_DESTRUCTIVE=on granted admin at the wire while the
@@ -324,6 +350,8 @@ def classify(body: bytes) -> Call:
             return Call(None, None, ADMIN, False)
         method = message.get("method") or method
         if message.get("method") != "tools/call":
+            required = max(required, METHOD_SCOPES.get(
+                message.get("method"), _NON_TOOL_METHOD_SCOPE))
             continue
         params = message.get("params")
         name = params.get("name") if isinstance(params, dict) else None

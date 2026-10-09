@@ -165,7 +165,7 @@ def allowed_tools() -> frozenset[str] | None:
 
 
 class SurfaceGate:
-    """Registration-time filter wrapping a FastMCP instance.
+    """Registration-time filter wrapping a MCPServer instance.
 
     Wraps rather than edits the 24 decorator sites: `.tool()` returns either
     the real decorator or a no-op that leaves the function unregistered, and
