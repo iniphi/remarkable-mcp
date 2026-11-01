@@ -602,7 +602,12 @@ async def rm_create(content: str = "", project: str | None = None,
 @mcp.tool()
 async def rm_new_notebook(title: str, project: str | None = None,
                           template: str = "default",
-                          body: str | None = None) -> dict:
+                          body: str | None = None,
+                          paper: str | None = None,
+                          pen: str | None = None,
+                          pen_color: str | None = None,
+                          pen_size: str | None = None,
+                          margins: int | None = None) -> dict:
     """Create a fresh handwriting notebook on the device, ready to write in.
 
     The notebook opens with the template's page margin and pen already set
@@ -620,17 +625,37 @@ async def rm_new_notebook(title: str, project: str | None = None,
     writes, but whether a fresh upload honours them before the first stroke
     is unverified -- worst case, one tap on the toolbar.
 
+    Any paper and any pen without a template per combination: paper, pen,
+    pen_color, pen_size and margins override the template's fields for this
+    call. A bad value is a config error that lists the valid ones.
+
     Args:
         title: Notebook name on the device and the heading on page 1.
         project: Project folder (the folder's name) -- pass explicitly.
         template: "default" | "lined" | "plain" | a name from rm_templates.local.json.
         body: Optional typed text under the heading.
+        paper: Page background, the device's own name, case-insensitive:
+            "Blank", "P Lines small|medium|large", "P Dots S", "P Dots large",
+            "P Grid small|medium|large", "P Margin small|medium|large",
+            "P Hexagon small|medium|large", "P Calligraphy medium|large",
+            "P Checklist", "P Cornell", "P Day", "P Week", "Isometric",
+            "Perspective1", storyboards, music sheets, "LS ..." landscape
+            variants -- full list in DEVICE_PAPERS (rm_make_text_notebook.py).
+        pen: "fineliner" | "ballpoint" | "marker" | "pencil" |
+            "mechanical_pencil" | "paintbrush" | "calligraphy" | "highlighter".
+        pen_color: "Black" | "Gray" | "White" | "Blue" | "Red" | "Yellow" |
+            "Green" | "Pink" (colours beyond black/grey/white need a device
+            whose firmware has them).
+        pen_size: "1" | "2" | "3" (or "thin" | "medium" | "thick").
+        margins: page margin in device units (125 = small).
     Returns:
-        RmResult with data.device_path, data.template, data.template_fields,
-        data.local_rmdoc.
+        RmResult with data.device_path, data.template, data.overrides,
+        data.template_fields (the resolved values), data.local_rmdoc.
     """
     return await asyncio.to_thread(
-        roundtrip.new_notebook, title, project, template, body)
+        roundtrip.new_notebook, title, project, template, body,
+        paper=paper, pen=pen, pen_color=pen_color, pen_size=pen_size,
+        margins=margins)
 
 
 # -- project round-trip -------------------------------------------------------

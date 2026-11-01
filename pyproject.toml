@@ -3,6 +3,11 @@ name = "rm-mcp"
 version = "1.0.0"
 description = "An MCP server that makes a reMarkable 2 a working surface for an AI agent: push documents, annotate them in ink, pull the annotations back as structured data."
 requires-python = ">=3.10"
+# MIT (ruled 2026-10-11). LICENSE is the same text the public build
+# writes (MIT_LICENSE in tools/rm/rm_build_public.py). The PEP 639 string form
+# needs setuptools>=77, hence the build-system pin at the foot of this file.
+license = "MIT"
+license-files = ["LICENSE"]
 
 # These are the REAL runtime dependencies of the default (core) surface, and
 # `pip install -e .` must produce a working install. This block was
@@ -38,3 +43,7 @@ remote = [
 
 [project.scripts]
 rm-mcp = "rm_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"

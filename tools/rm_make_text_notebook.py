@@ -95,8 +95,8 @@ STYLE_TIMESTAMP_SEQ = 15
 # cPages as {"template": {"timestamp": "1:N", "value": "<name>"}} -- read off
 # the same three notebooks ("P Lines small", "P Dots large", "Blank"), so the
 # shape is verified. Absent means the device default (blank). The names are
-# the device's own: "P Lines small|medium|large", "P Dots small|large",
-# "P Grid small|medium|large", "Blank"; "P" is portrait, "LS" landscape.
+# the device's own filenames from its templates.json -- the full list is
+# DEVICE_PAPERS below; "P" is portrait, "LS" landscape.
 #
 # tools/rm_templates.local.json (gitignored, never shipped) overlays or adds
 # templates by name, so a personal preference never has to live in this file.
@@ -136,6 +136,129 @@ TEMPLATES: dict[str, dict] = {
     },
 }
 TEMPLATES_LOCAL = _TOOLS_ROOT_DIR / "rm_templates.local.json"
+
+# -- per-call overrides: paper and pen ---------------------------------------
+# A template is a named bundle; these let one call pick any paper and any pen
+# without minting a template per combination (2026-10-11).
+#
+# DEVICE_PAPERS: the built-in template filenames from an RM2 templates.json
+# (community dump, vonneudeck/remarkable-bujo, read 2026-10-11, its own custom
+# bujo entries left out). "P Lines small" and "P Dots large" are additionally
+# confirmed off real notebooks; the rest are the device's names but not yet
+# seen on a pushed page. A name not on the device renders blank, never errors.
+DEVICE_PAPERS: tuple[str, ...] = (
+    "Blank",
+    "P Lines small", "P Lines medium", "P Lines large",
+    "P Lined heading", "P Lined top", "P Lined bottom",
+    "P Margin small", "P Margin medium", "P Margin large",
+    "P Dots S", "P Dots large", "P Dots S top", "P Dots S bottom",
+    "P Grid small", "P Grid medium", "P Grid large", "P Grid top", "P Grid bottom",
+    "P Grid margin med", "P Grid margin large",
+    "P Hexagon small", "P Hexagon medium", "P Hexagon large",
+    "P Calligraphy medium", "P Calligraphy large",
+    "P Checklist", "P Cornell", "P Day", "P Week", "P Week 2", "P Week US",
+    "P US College", "P US Legal",
+    "P One storyboard", "P Two storyboards", "P Four storyboards",
+    "P Piano sheet small", "P Piano sheet medium", "P Piano sheet large",
+    "P Guitar chords", "P Guitar tab", "P Bass tab",
+    "Isometric", "Perspective1", "Perspective2",
+    "LS Lines small", "LS Lines medium", "LS Lines top", "LS Lines bottom",
+    "LS Margin small", "LS Margin medium",
+    "LS Dots top", "LS Dots bottom",
+    "LS Grid top", "LS Grid bottom", "LS Grid margin med", "LS Grid margin large",
+    "LS Calligraphy medium", "LS Calligraphy large",
+    "LS Checklist", "LS Checklist double", "LS Dayplanner", "LS Week", "LS Week US",
+    "LS One storyboard", "LS One storyboard 2", "LS Two storyboards",
+    "LS Four storyboards",
+    "LS Piano sheet small", "LS Piano sheet medium", "LS Piano sheet large",
+)
+
+# Friendly name -> the tool id the device writes in extraMetadata.LastPen. The
+# Last<Tool>Color / Last<Tool>Size key names are from the .content model in
+# skius/rm-pdf-tools (read 2026-10-11); "Markerv2" is not in that model and is
+# inferred from rmscene's MARKER_2 stroke id. Only "Finelinerv2" is confirmed
+# off a real notebook.
+PENS: dict[str, str] = {
+    "fineliner": "Finelinerv2",
+    "ballpoint": "Ballpointv2",
+    "marker": "Markerv2",
+    "pencil": "Pencilv2",
+    "mechanical_pencil": "SharpPencilv2",
+    "paintbrush": "Paintbrushv2",
+    "calligraphy": "Calligraphy",
+    "highlighter": "Highlighterv2",
+}
+# Device colour strings. Only "Black" is confirmed off a real notebook; the
+# rest are rmscene's stroke-colour names in the device's capitalisation.
+PEN_COLORS: tuple[str, ...] = ("Black", "Gray", "White", "Blue", "Red",
+                               "Yellow", "Green", "Pink")
+# Thin / medium / thick. The device stores a STRING.
+PEN_SIZES: dict[str, str] = {"1": "1", "2": "2", "3": "3",
+                             "thin": "1", "medium": "2", "thick": "3"}
+
+
+def _norm(value: str) -> str:
+    return re.sub(r"[\s_\-]+", "_", str(value).strip().lower())
+
+
+def resolve_paper(name: str) -> str:
+    """Return the device filename for `name`, matched case-insensitively."""
+    wanted = _norm(name)
+    for paper in DEVICE_PAPERS:
+        if _norm(paper) == wanted:
+            return paper
+    raise ValueError(f"unknown paper {name!r}; one of: {', '.join(DEVICE_PAPERS)}")
+
+
+def resolve_pen(name: str) -> str:
+    """Return the device tool id for a friendly name or a raw id."""
+    wanted = _norm(name)
+    for friendly, tool in PENS.items():
+        if wanted in (friendly, _norm(tool)):
+            return tool
+    raise ValueError(f"unknown pen {name!r}; one of: {', '.join(PENS)}")
+
+
+def apply_overrides(spec: dict, *, paper: str | None = None, pen: str | None = None,
+                    pen_color: str | None = None, pen_size: str | None = None,
+                    margins: int | None = None) -> dict:
+    """Layer per-call paper/pen choices over a template, returning a new spec.
+
+    A colour or size without a pen applies to the template's own pen (the
+    fineliner for default/lined). Raises ValueError naming the valid values.
+    """
+    out = dict(spec)
+    meta = dict(spec.get("extra_metadata") or {})
+    if paper is not None:
+        resolved = resolve_paper(paper)
+        out["page_template"] = None if resolved == "Blank" else resolved
+    if pen is not None:
+        tool = resolve_pen(pen)
+        meta.update({"LastPen": tool, "LastTool": tool, "LastActiveTool": "primary"})
+    if pen_color is not None or pen_size is not None:
+        tool = meta.get("LastPen")
+        if not tool:
+            raise ValueError("pen_color/pen_size need a pen: pass pen=, or a "
+                             "template that sets one (default, lined)")
+        if pen_color is not None:
+            colour = next((c for c in PEN_COLORS if c.lower() == str(pen_color).strip().lower()), None)
+            if colour is None:
+                raise ValueError(f"unknown pen_color {pen_color!r}; one of: {', '.join(PEN_COLORS)}")
+            meta[f"Last{tool}Color"] = colour
+        if pen_size is not None:
+            size = PEN_SIZES.get(str(pen_size).strip().lower())
+            if size is None:
+                raise ValueError(f"unknown pen_size {pen_size!r}; one of: 1, 2, 3 (thin, medium, thick)")
+            meta[f"Last{tool}Size"] = size
+    if pen is not None:
+        # A new pen's unset colour/size get the device's own defaults, so the
+        # toolbar shows a definite state, not whatever it last held.
+        meta.setdefault(f"Last{meta['LastPen']}Color", "Black")
+        meta.setdefault(f"Last{meta['LastPen']}Size", "2")
+    if margins is not None:
+        out["margins"] = int(margins)
+    out["extra_metadata"] = meta
+    return out
 
 
 def load_templates() -> dict[str, dict]:
@@ -425,12 +548,25 @@ def main() -> None:
     parser.add_argument("--template", default=None,
                         help="Notebook template (margin, pen, background) -- see --list-templates")
     parser.add_argument("--list-templates", action="store_true",
-                        help="Print the available templates and exit")
+                        help="Print the available templates, papers and pens, and exit")
+    parser.add_argument("--paper", default=None,
+                        help="Page background, overriding the template's (a DEVICE_PAPERS name)")
+    parser.add_argument("--pen", default=None,
+                        help=f"Toolbar pen, overriding the template's: {', '.join(PENS)}")
+    parser.add_argument("--pen-color", default=None,
+                        help=f"Pen colour: {', '.join(PEN_COLORS)}")
+    parser.add_argument("--pen-size", default=None, help="Pen size: 1, 2, 3 (thin, medium, thick)")
+    parser.add_argument("--margins", type=int, default=None,
+                        help="Page margin, overriding the template's (125 = small)")
     if "--list-templates" in sys.argv[1:]:
         # Listing needs none of the required arguments, so answer before
         # argparse can demand them.
         for name, spec in sorted(load_templates().items()):
             print(f"{name}: {spec.get('description', '')}")
+        print(f"papers: {', '.join(DEVICE_PAPERS)}")
+        print(f"pens: {', '.join(PENS)}")
+        print(f"pen colours: {', '.join(PEN_COLORS)}")
+        print("pen sizes: 1, 2, 3 (thin, medium, thick)")
         return
     args = parser.parse_args()
 
@@ -442,6 +578,14 @@ def main() -> None:
                   f"{', '.join(sorted(templates))}", file=sys.stderr)
             sys.exit(2)
         template = templates[args.template]
+    overrides = {"paper": args.paper, "pen": args.pen, "pen_color": args.pen_color,
+                 "pen_size": args.pen_size, "margins": args.margins}
+    if any(v is not None for v in overrides.values()):
+        try:
+            template = apply_overrides(template or load_templates()["plain"], **overrides)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(2)
 
     if args.input:
         with open(args.input, encoding="utf-8") as f:

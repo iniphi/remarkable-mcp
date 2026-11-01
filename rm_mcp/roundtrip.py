@@ -308,8 +308,15 @@ _CONTENT_MODES = ("markdown", "html", "svg", "native")
 
 
 def new_notebook(title: str, project: str | None, template: str,
-                 body: str | None) -> dict[str, Any]:
+                 body: str | None, *, paper: str | None = None,
+                 pen: str | None = None, pen_color: str | None = None,
+                 pen_size: str | None = None,
+                 margins: int | None = None) -> dict[str, Any]:
     """Create a fresh Type Folio notebook from a template and push it.
+
+    paper / pen / pen_color / pen_size / margins override the template's
+    fields for this one call; they are validated here, before any build, so a
+    bad name is a config error that lists the valid values.
 
     Builds the page through tools/rm_make_text_notebook.py as a child
     process (it prints on success, and stdout is the MCP channel), then
@@ -329,6 +336,14 @@ def new_notebook(title: str, project: str | None, template: str,
     if spec is None:
         return err_result("config", f"unknown template {template!r}",
                           f"use one of {', '.join(sorted(templates))}")
+    overrides = {"paper": paper, "pen": pen, "pen_color": pen_color,
+                 "pen_size": pen_size, "margins": margins}
+    overrides = {k: v for k, v in overrides.items() if v is not None}
+    try:
+        spec = mtn.apply_overrides(spec, **overrides)
+    except (ValueError, TypeError) as exc:
+        return err_result("config", str(exc),
+                          "pick a value from the list in the message")
 
     lines: list[str] = []
     if spec.get("heading", True):
@@ -344,6 +359,8 @@ def new_notebook(title: str, project: str | None, template: str,
     dest = out / f"{stem}.rmdoc"
     args = ["--input", str(src), "--title", title.strip(), "--out", str(dest),
             "--template", template]
+    for key, value in overrides.items():
+        args += [f"--{key.replace('_', '-')}", str(value)]
     try:
         proc = run_script("rm_make_text_notebook.py", args, "rm_new_notebook")
     except subprocess.TimeoutExpired as exc:
@@ -357,6 +374,7 @@ def new_notebook(title: str, project: str | None, template: str,
     result = push_local_file(dest, project, title)
     if result.get("ok"):
         result["data"]["template"] = template
+        result["data"]["overrides"] = overrides
         result["data"]["template_fields"] = {
             "margins": spec.get("margins"),
             "extra_metadata": dict(spec.get("extra_metadata") or {}),

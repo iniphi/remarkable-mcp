@@ -74,6 +74,26 @@ class TestTemplates(unittest.TestCase):
         self.assertEqual(templates["sketch"]["extra_metadata"]["LastPen"], "Pencilv2")
         self.assertIsNone(templates["sketch"]["margins"], "unknown names start from plain")
 
+    def test_every_pen_resolves_to_a_device_tool(self):
+        for friendly, tool in mtn.PENS.items():
+            self.assertEqual(mtn.resolve_pen(friendly), tool)
+            self.assertEqual(mtn.resolve_pen(tool), tool, "raw device ids pass through")
+        self.assertEqual(mtn.resolve_pen("Mechanical pencil"), "SharpPencilv2")
+
+    def test_blank_paper_clears_the_page_template(self):
+        spec = mtn.apply_overrides(mtn.load_templates()["lined"], paper="blank")
+        self.assertIsNone(spec["page_template"])
+
+    def test_colour_without_any_pen_is_refused(self):
+        with self.assertRaises(ValueError):
+            mtn.apply_overrides(mtn.load_templates()["plain"], pen_color="Black")
+
+    def test_colour_alone_restyles_the_templates_pen(self):
+        spec = mtn.apply_overrides(mtn.load_templates()["default"], pen_color="red")
+        self.assertEqual(spec["extra_metadata"]["LastFinelinerv2Color"], "Red")
+        self.assertEqual(mtn.load_templates()["default"]["extra_metadata"]
+                         ["LastFinelinerv2Color"], "Black", "the template is not mutated")
+
     def test_malformed_local_file_is_an_error_not_a_silent_default(self):
         tmp = Path(tempfile.mkdtemp(prefix="rm_tpl_"))
         self.addCleanup(shutil.rmtree, tmp, True)
@@ -139,6 +159,38 @@ class TestBuilder(unittest.TestCase):
         self.assertEqual(paragraphs[0]["style"], "heading")
         self.assertEqual(paragraphs[0]["text"].rstrip("\n"), "Field notes")
 
+    def test_paper_and_pen_flags_override_the_template(self):
+        content, extracted = self._content_of(self._build(
+            "--template", "default", "--paper", "p dots s", "--pen", "ballpoint",
+            "--pen-color", "blue", "--pen-size", "thick"))
+        self.addCleanup(shutil.rmtree, extracted, True)
+        meta = content["extraMetadata"]
+        self.assertEqual(meta["LastPen"], "Ballpointv2")
+        self.assertEqual(meta["LastTool"], "Ballpointv2")
+        self.assertEqual(meta["LastBallpointv2Color"], "Blue")
+        self.assertEqual(meta["LastBallpointv2Size"], "3")
+        self.assertEqual(content["cPages"]["pages"][0]["template"]["value"], "P Dots S",
+                         "matched case-insensitively to the device's own name")
+        self.assertEqual(content["margins"], 125, "untouched fields keep the template's")
+
+    def test_overrides_without_a_template_start_from_plain(self):
+        content, extracted = self._content_of(self._build("--pen", "pencil"))
+        self.addCleanup(shutil.rmtree, extracted, True)
+        self.assertNotIn("margins", content)
+        self.assertEqual(content["extraMetadata"]["LastPen"], "Pencilv2")
+        self.assertEqual(content["extraMetadata"]["LastPencilv2Size"], "2",
+                         "a new pen is seeded with the device defaults")
+
+    def test_unknown_paper_exits_2_naming_the_choices(self):
+        proc = subprocess.run(
+            [sys.executable, str(BUILDER_CLI),
+             "--title", "x", "--text", "x", "--out", str(self.tmp / "x.rmdoc"),
+             "--paper", "P Dots small"],
+            capture_output=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, timeout=120, cwd=str(TOOLS_DIR))
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("P Dots S", proc.stderr)
+
     def test_unknown_template_exits_2(self):
         proc = subprocess.run(
             [sys.executable, str(BUILDER_CLI),
@@ -185,6 +237,30 @@ class TestTool(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"]["system"], "config")
         self.assertIn("plain", result["error"]["remedy"])
+
+    def test_overrides_reach_the_built_notebook(self):
+        with mock.patch.object(roundtrip, "push_local_file", self._fake_push):
+            result = roundtrip.new_notebook("Sketches", "Thesis", "plain", None,
+                                            paper="P Grid medium", pen="marker",
+                                            pen_size="1")
+        self.assertTrue(result["ok"], result)
+        data = result["data"]
+        self.assertEqual(data["overrides"],
+                         {"paper": "P Grid medium", "pen": "marker", "pen_size": "1"})
+        self.assertEqual(data["template_fields"]["page_template"], "P Grid medium")
+        content, extracted = _content_of(self.pushed[0])
+        self.addCleanup(shutil.rmtree, extracted, True)
+        self.assertEqual(content["extraMetadata"]["LastPen"], "Markerv2")
+        self.assertEqual(content["extraMetadata"]["LastMarkerv2Size"], "1")
+
+    def test_bad_override_is_refused_before_any_build(self):
+        with mock.patch.object(roundtrip, "push_local_file", self._fake_push):
+            result = roundtrip.new_notebook("Sketches", "Thesis", "default", None,
+                                            pen="crayon")
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["system"], "config")
+        self.assertIn("ballpoint", result["error"]["message"])
+        self.assertFalse(hasattr(self, "pushed"))
 
     def test_empty_title_is_refused_before_any_build(self):
         with mock.patch.object(roundtrip, "push_local_file", self._fake_push):
