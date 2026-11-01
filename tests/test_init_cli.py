@@ -30,12 +30,15 @@ class InitCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.env = self.tmp / "tools" / ".env"
         self.routing = self.tmp / "ROUTING.md"
+        self.desktop_cfg = self.tmp / "Claude" / "claude_desktop_config.json"
         patches = [
             mock.patch.object(init_cli, "env_path", lambda: self.env),
             mock.patch.object(init_cli, "routing_path", lambda: self.routing),
             mock.patch.object(init_cli, "_rmapi_status",
                               lambda rmapi: ("C:/bin/rmapi.exe", True, ["Notes", "Thesis"], "ok")),
             mock.patch.object(init_cli.config, "RM_MCP_DIR", self.tmp),
+            mock.patch.object(init_cli.desktop, "desktop_config_path",
+                              lambda *a, **k: self.desktop_cfg),
         ]
         for p in patches:
             p.start()
@@ -105,6 +108,79 @@ class TestNonInteractive(InitCase):
         with mock.patch.object(init_cli, "_rmapi_status", lambda rmapi: ("", None, [], None)):
             out = self.run_init()
         self.assertIn("go install github.com/ddvk/rmapi", out)
+
+
+class TestDesktopBlock(InitCase):
+    """Step 7: the Claude desktop app registration."""
+
+    def test_block_is_printed_without_writing(self):
+        out = self.run_init()
+        self.assertIn("Register with the Claude desktop app (conversation surface)", out)
+        self.assertIn(str(self.desktop_cfg), out)
+        self.assertIn('"mcpServers"', out)
+        self.assertIn("fully quit Claude desktop", out)
+        self.assertIn("system tray", out)
+        self.assertIn("rm_health", out)
+        self.assertIn("claude mcp add rm --", out, "the Claude Code line is kept")
+        self.assertFalse(self.desktop_cfg.exists(), "--yes alone never writes it")
+
+    def test_write_flag_creates_the_entry(self):
+        out = self.run_init("--write-desktop-config")
+        data = json.loads(self.desktop_cfg.read_text(encoding="utf-8"))
+        entry = data["mcpServers"]["rm"]
+        self.assertEqual(entry["command"], sys.executable)
+        self.assertEqual(entry["args"], [str(self.tmp / "run_server.py")])
+        self.assertNotIn("type", entry)
+        self.assertIn("desktop config written", out)
+
+    def test_write_flag_keeps_other_servers_and_reports_update(self):
+        self.desktop_cfg.parent.mkdir(parents=True)
+        self.desktop_cfg.write_text(json.dumps({"mcpServers": {
+            "other": {"command": "x"},
+            "rm": {"command": "C:/Python313/python.exe", "args": ["old.py"]}}}),
+            encoding="utf-8")
+        out = self.run_init("--write-desktop-config")
+        data = json.loads(self.desktop_cfg.read_text(encoding="utf-8"))
+        self.assertEqual(data["mcpServers"]["other"], {"command": "x"})
+        self.assertIn("C:/Python313/python.exe", out)
+        self.assertEqual(len(list(self.desktop_cfg.parent.glob("*.bak-*"))), 1)
+
+    def test_write_flag_refuses_bad_json(self):
+        self.desktop_cfg.parent.mkdir(parents=True)
+        self.desktop_cfg.write_text("{ nope", encoding="utf-8")
+        out = self.run_init("--write-desktop-config")
+        self.assertIn("not written", out)
+        self.assertEqual(self.desktop_cfg.read_text(encoding="utf-8"), "{ nope")
+
+    def test_desktop_config_flag_overrides_the_path(self):
+        other = self.tmp / "elsewhere" / "cfg.json"
+        out = self.run_init("--desktop-config", str(other), "--write-desktop-config")
+        self.assertTrue(other.is_file())
+        self.assertFalse(self.desktop_cfg.exists())
+        self.assertIn(str(other), out)
+
+    def test_interactive_prompt_defaults_to_no(self):
+        from io import StringIO
+        for answer, expect_written in (("", False), ("y", True)):
+            if self.desktop_cfg.exists():
+                self.desktop_cfg.unlink()
+            buf = StringIO()
+            with mock.patch("sys.stdout", buf), \
+                    mock.patch("builtins.input", lambda prompt="": answer):
+                rc = init_cli.run(["--projects-root", "/", "--managed-roots", "",
+                                   "--notes-to", "", "--directives-to", ""])
+            self.assertEqual(rc, 0)
+            self.assertEqual(self.desktop_cfg.exists(), expect_written, answer)
+
+    def test_system_python_gets_a_warning(self):
+        with mock.patch.object(sys, "base_prefix", sys.prefix):
+            out = self.run_init()
+        self.assertIn("[!] this interpreter is not in a virtual environment", out)
+
+    def test_venv_gets_no_warning(self):
+        with mock.patch.object(sys, "base_prefix", sys.prefix + "-base"):
+            out = self.run_init()
+        self.assertNotIn("not in a virtual environment", out)
 
 
 class TestProbeState(InitCase):

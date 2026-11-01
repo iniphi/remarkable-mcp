@@ -41,7 +41,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from . import (__version__, authz, config, device, manage, pages, pull_worker,
+from . import (__version__, authz, config, desktop, device, manage, pages, pull_worker,
                roundtrip, runner, surface, wire)
 from .envelope import (
     REMEDIES,
@@ -267,7 +267,18 @@ async def rm_health(write_probe: bool = False) -> dict:
                     write = {"writable": None, "detail": str(exc),
                              "throttled_until": exc.until_iso}
 
+        desktop_reg = desktop.registration_check()
+        desktop_extra: dict = {}
+        if desktop_reg["state"] == "mismatch":
+            desktop_extra["warning"] = (
+                f"Claude desktop config {desktop_reg['path']} launches "
+                f"{desktop_reg['command']}, not {desktop_reg['expected']}. "
+                f"Fix: {desktop_reg['expected']} run_server.py --register-desktop "
+                "(writes only that entry), then fully quit and reopen Claude desktop.")
+
         return {
+            **desktop_extra,
+            "desktop_registration": desktop_reg,
             "rmapi_binary": {
                 # `path` kept for readers that already parse it; it is the
                 # resolved path when there is one, so an existing caller sees

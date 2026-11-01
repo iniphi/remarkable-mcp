@@ -41,7 +41,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import config, creation, device
+from . import config, creation, desktop, device
 
 # Keys --init may write. Anything else in an existing .env is left alone.
 _MANAGED_KEYS = ("RMAPI_BIN", "RM_MCP_PROJECTS_ROOT", "RM_ROOT",
@@ -231,6 +231,12 @@ def run(argv: list[str] | None = None) -> int:
     ap.add_argument("--reset-creation", action="store_true",
                     help=f"overwrite {creation.CREATION_NAME} with the shipped "
                          f"default page template (it is never overwritten otherwise)")
+    ap.add_argument("--desktop-config", default=None, metavar="PATH",
+                    help="Claude desktop config file to show/write "
+                         "(default: the standard path for this OS)")
+    ap.add_argument("--write-desktop-config", action="store_true",
+                    help="merge the rm entry into the Claude desktop config "
+                         "(other servers kept; backup if an rm entry changes)")
     args = ap.parse_args(argv)
     yes = args.yes
 
@@ -345,6 +351,37 @@ def run(argv: list[str] | None = None) -> int:
     _say("or add to mcpServers in ~/.claude.json:")
     _say("    " + block.replace("\n", "\n    "))
     _say("")
+    _register_desktop(args, launcher, yes)
+    _say("")
     _say("Then, in a new session: call rm_health, make something with rm_create, "
          "write on it, pull it back with rm_pull_project.")
     return 0
+
+
+def _register_desktop(args: argparse.Namespace, launcher: Path, yes: bool) -> None:
+    """Step 7b: the Claude desktop app block, and the optional merge-write."""
+    cfg_path = Path(args.desktop_config) if args.desktop_config \
+        else desktop.desktop_config_path()
+    entry = desktop.desktop_entry(sys.executable, launcher)
+    block = json.dumps({"mcpServers": {"rm": entry}}, indent=2)
+    _say("")
+    _say("Register with the Claude desktop app (conversation surface):")
+    if sys.prefix == sys.base_prefix:
+        _say(desktop.NOT_A_VENV_WARNING)
+    _say(f"    config file: {cfg_path}")
+    _say("    add this under mcpServers (merged, other servers kept):")
+    _say("    " + block.replace("\n", "\n    "))
+    _say("    " + desktop.RESTART_HINT)
+    if args.write_desktop_config:
+        do_write = True
+    elif yes:
+        do_write = False
+    else:
+        try:
+            do_write = input(f"Write this entry into {cfg_path}? [y/N]: "
+                             ).strip().lower() in ("y", "yes")
+        except EOFError:
+            do_write = False
+    if not do_write:
+        return
+    _say(desktop.describe(desktop.write_desktop_entry(cfg_path, sys.executable, launcher)))

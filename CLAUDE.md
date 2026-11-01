@@ -78,8 +78,31 @@ to guess.
    claude mcp add rm -- "<venv python>" "<repo>/run_server.py"
    ```
 
-5. **Verify.** In a new session call `rm_health`. It must show the rmapi
-   binary present, the cloud authenticated, and `guard_scope`. Then run the
+   That registers Claude Code only. If the person also uses the Claude
+   desktop app (the conversation surface), it needs its own entry in its
+   own file. Re-run the init with `--write-desktop-config` added: it merges
+   an `rm` entry, with the same venv interpreter, into
+   `claude_desktop_config.json` (Windows `%APPDATA%\Claude\`, macOS
+   `~/Library/Application Support/Claude/`; `--desktop-config PATH`
+   overrides). It keeps every other server, writes a dated backup before it
+   replaces an existing `rm` entry's command, and refuses a file it cannot
+   parse. To repair only the desktop entry later (a new venv, a warning
+   from `--check`), run `<venv python> run_server.py --register-desktop`
+   instead: it writes that entry and nothing else, where a re-run of the
+   init also re-merges `tools/.env`.
+   Then ask the person to quit the desktop app completely and reopen it: on
+   Windows, quit from the system-tray icon, because closing the window
+   leaves it running and it reads the config only at start. **You cannot
+   do the restart for them.**
+
+5. **Verify.** On every surface they registered, in a new session or
+   conversation, call `rm_health`. It must show the rmapi
+   binary present, the cloud authenticated, and `guard_scope`. If the
+   desktop app shows "Connection closed" for `rm`, the server died before
+   it could speak: read `rm-mcp-fatal.log` (under `%LOCALAPPDATA%\rm-mcp\`
+   on Windows, `~/Library/Logs/rm-mcp/` on macOS, `~/.local/state/rm-mcp/`
+   elsewhere), and run `run_server.py --check`, which warns when the
+   desktop entry names a different interpreter. Then run the
    loop once end to end: `rm_new_notebook(title="Hello", project="<a folder>")`,
    have the person write one line on it, `rm_pull_project(name="Hello",
    project="<the folder>")`, read the page image, tell them what it says.

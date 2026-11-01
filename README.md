@@ -81,6 +81,49 @@ Register it with the line `--init` prints:
 claude mcp add rm -- "/absolute/path/to/.venv/bin/python" "/absolute/path/to/remarkable-mcp/run_server.py"
 ```
 
+That registers it with Claude Code. The Claude desktop app keeps its own list
+of servers, in its own file, and needs its own entry.
+
+### Registering on the Claude desktop app
+
+`--init` also prints an `mcpServers` entry for the desktop app, carrying the
+same absolute interpreter path, and names the file it belongs in:
+
+| OS | Desktop config file |
+|---|---|
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+
+There is no official Linux desktop app; `--init` assumes
+`~/.config/Claude/claude_desktop_config.json` there, and
+`--desktop-config PATH` points it anywhere else.
+
+Add `--write-desktop-config` and `--init` writes the entry for you. It merges:
+every other server and setting in the file is kept, an existing `rm` entry's
+command and arguments are replaced only after a dated backup is written beside
+the file (any other key on that entry, such as `env`, is kept), and a file it
+cannot parse is left exactly as it was.
+
+To fix only the desktop entry later, for instance after moving to a new venv,
+run `run_server.py --register-desktop` with the new interpreter. It writes that
+one entry, the same way, and touches nothing else; re-running `--init` would
+also re-merge `tools/.env`.
+
+Then quit the desktop app completely and open it again. On Windows that means
+quitting from the system-tray icon: closing the window leaves the app
+running, and it reads its config only when it starts. In a new conversation,
+call `rm_health`; the install is working on the desktop when that answers.
+
+Point the entry at the venv's interpreter, never at a system Python. A server
+that cannot import its dependencies exits at once, and the desktop app shows
+only "Connection closed". The server writes the real error to
+`rm-mcp-fatal.log` as well as to stderr: under `%LOCALAPPDATA%\rm-mcp\` on
+Windows, `~/Library/Logs/rm-mcp/` on macOS, `~/.local/state/rm-mcp/`
+elsewhere. `run_server.py --check` and `rm_health` both warn when the desktop
+entry names a different interpreter from the one they are running under, and
+name the `--register-desktop` command that fixes it, so an upgrade that moves
+the server to a new venv cannot strand the desktop registration silently.
+
 ## The loop
 
 ```

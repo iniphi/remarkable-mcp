@@ -26,6 +26,15 @@ if str(RM_MCP_DIR) not in sys.path:
 
 def _fail(message: str) -> None:
     print(f"rm-mcp FATAL: {message}", file=sys.stderr)
+    # The Claude desktop app shows only "Connection closed" and hides stderr,
+    # so leave the message in a file as well. stdout stays untouched.
+    try:
+        from rm_mcp import desktop
+        logged = desktop.append_fatal(message)
+    except Exception:
+        logged = None
+    if logged:
+        print(f"rm-mcp: this error was also written to {logged}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -48,6 +57,26 @@ def _tool_count(server) -> int:
     return len(asyncio.run(server.mcp.list_tools()))
 
 
+def _report_desktop_registration() -> None:
+    """--check: warn (never fail) when the desktop config names another Python."""
+    try:
+        from rm_mcp import desktop
+        info = desktop.registration_check()
+    except Exception:
+        return
+    if info["state"] == "mismatch":
+        print(f"rm-mcp WARNING: the Claude desktop config {info['path']} launches "
+              f"{info['command']}, not this interpreter ({info['expected']}). "
+              f"The desktop app will fail with 'Connection closed' if that Python "
+              f"lacks mcp 2.x. Fix: `{sys.executable} {Path(__file__).resolve()} "
+              f"--register-desktop` (writes only that entry), then fully quit and "
+              f"reopen Claude desktop.",
+              file=sys.stderr)
+    elif info["state"] == "match":
+        print(f"rm-mcp: Claude desktop config {info['path']} launches this interpreter",
+              file=sys.stderr)
+
+
 USAGE = """\
 rm-mcp -- a reMarkable 2 as a working surface for an AI agent.
 
@@ -57,6 +86,9 @@ usage:
   run_server.py --check         import smoke test, print the tool count, exit
   run_server.py --init [opts]   walk this clone to a working install
   run_server.py --init --help   the full list of --init options
+  run_server.py --register-desktop [--desktop-config PATH]
+                                write this interpreter into the Claude desktop
+                                app's config (merged; touches nothing else)
   run_server.py --help          this message
 
 Diagnostics go to stderr: under stdio transport stdout is the protocol channel.
@@ -80,9 +112,16 @@ def main() -> None:
     # No args is still the server: that is how an MCP client launches it.
     if argv[:1] in (["--help"], ["-h"]):
         _usage(sys.stderr, 0)
-    if argv and argv[0] not in ("--init", "--check"):
+    if argv and argv[0] not in ("--init", "--check", "--register-desktop"):
         print(f"rm-mcp: unknown option {argv[0]!r}\n", file=sys.stderr)
         _usage(sys.stderr, 2)
+
+    if argv[:1] == ["--register-desktop"]:
+        # Stdlib only and before the server import, so it works under the
+        # interpreter being registered whatever state the install is in.
+        from rm_mcp import desktop
+        sys.exit(desktop.register_cli(argv[1:], sys.executable,
+                                      Path(__file__).resolve()))
 
     if sys.argv[1:2] == ["--init"]:
         # The setup walk: writes .env and ROUTING.md, prints the registration.
@@ -98,6 +137,7 @@ def main() -> None:
     if "--check" in sys.argv[1:]:
         count = _tool_count(server)
         print(f"rm-mcp OK: {count} tools", file=sys.stderr)
+        _report_desktop_registration()
         sys.exit(0)
     server.main()
 
